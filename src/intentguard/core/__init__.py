@@ -1,7 +1,14 @@
 """Schemas, money helpers and violation codes. No decision logic lives here."""
 
 from .base import StrictModel
-from .decision import Decision, DriftItem, DriftReport, LatencyBreakdown, Violation
+from .decision import (
+    Decision,
+    DriftItem,
+    DriftReport,
+    LatencyBreakdown,
+    PolicyResult,
+    Violation,
+)
 from .enums import (
     Category,
     Condition,
@@ -43,6 +50,7 @@ __all__ = [
     "LineItemKind",
     "Offer",
     "Outcome",
+    "PolicyResult",
     "Product",
     "QuantityMode",
     "RecurrenceInterval",

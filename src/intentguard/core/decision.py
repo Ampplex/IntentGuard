@@ -55,6 +55,29 @@ class LatencyBreakdown(StrictModel):
     total_ms: float = 0.0
 
 
+class PolicyResult(StrictModel):
+    """What the deterministic engine returns.
+
+    Narrower than a Decision on purpose. Drift, latency and the escalation
+    question are assembled by the gate from several sources; the engine only
+    reports what the constraints say. checked_total_paise records the figure
+    that was actually compared against the ceiling, which is not always the
+    offer total -- a financed offer is checked on the sum of its instalments.
+    """
+
+    outcome: Outcome
+    violations: list[Violation] = Field(default_factory=list)
+    checked_total_paise: int
+
+    @model_validator(mode="after")
+    def _outcome_matches_the_violations(self) -> PolicyResult:
+        if self.outcome is Outcome.ALLOW and self.violations:
+            raise ValueError("an ALLOW cannot carry violations")
+        if self.outcome is not Outcome.ALLOW and not self.violations:
+            raise ValueError(f"a {self.outcome.value} must say what was wrong")
+        return self
+
+
 class Decision(StrictModel):
     decision: Outcome
     intent_id: str

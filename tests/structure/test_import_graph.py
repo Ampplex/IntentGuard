@@ -5,9 +5,17 @@ nothing from semantic/, ledger/ or a model client. It is built here at stage 1
 so the constraint is enforced from the first commit rather than discovered
 later, and so stage 2 only has to add a rule rather than a mechanism.
 
-At stage 1 there is one rule: core/ depends on nothing but the standard library
-and pydantic. A core that reaches for a database or an HTTP client is a core
-that has stopped being schemas.
+Two rules now.
+
+core/ depends on nothing but the standard library and pydantic. A core that
+reaches for a database or an HTTP client is a core that has stopped being
+schemas.
+
+policy/ imports nothing from semantic/, ledger/ or any model client, and never
+reads a clock. The first half is what CLAUDE.md asks for and proves the decision
+cannot be argued with by a model. The second half matters just as much and the
+original gate does not mention it: an engine that calls datetime.now() is not
+deterministic either, it is just deterministic in a way you cannot test.
 """
 
 from __future__ import annotations
@@ -63,3 +71,75 @@ def test_the_walker_actually_sees_imports() -> None:
     found = package_imports("core")
     assert any(imports for imports in found.values())
     assert "pydantic" in set().union(*found.values())
+
+
+POLICY_MAY_NOT_IMPORT = {"semantic", "ledger", "gate", "payments", "merchant", "buyer", "bench"}
+
+CLOCK_READERS = {
+    ("datetime", "now"),
+    ("datetime", "today"),
+    ("datetime", "utcnow"),
+    ("time", "time"),
+}
+
+
+def _policy_files():
+    return sorted((SRC / "policy").rglob("*.py"))
+
+
+def sibling_packages_reached(path: Path) -> set[str]:
+    """Which intentguard subpackages this file imports, relative or absolute.
+
+    Relative imports have to be resolved against the importing module's own
+    package. Every import inside this codebase is written relatively, so a
+    checker that only understood absolute imports would pass while policy/ was
+    importing ledger/ on the line above it.
+    """
+    parts = list(path.relative_to(SRC.parent).with_suffix("").parts)
+    package = parts[:-1]
+    reached: set[str] = set()
+
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        targets: list[list[str]] = []
+        if isinstance(node, ast.Import):
+            targets = [alias.name.split(".") for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0:
+                targets = [node.module.split(".")] if node.module else []
+            else:
+                base = package[: len(package) - (node.level - 1)]
+                targets = [base + (node.module.split(".") if node.module else [])]
+
+        for target in targets:
+            if len(target) > 1 and target[0] == "intentguard":
+                reached.add(target[1])
+    return reached
+
+
+@pytest.mark.parametrize("path", _policy_files(), ids=lambda p: p.name)
+def test_policy_imports_no_sibling_package(path: Path) -> None:
+    assert not sibling_packages_reached(path) & POLICY_MAY_NOT_IMPORT, path.name
+
+
+def test_the_sibling_resolver_understands_relative_imports() -> None:
+    """The checker above is worthless if it cannot see the imports actually used."""
+    engine = SRC / "policy" / "engine.py"
+    assert "core" in sibling_packages_reached(engine)
+
+
+@pytest.mark.parametrize("path", _policy_files(), ids=lambda p: p.name)
+def test_policy_touches_no_model_client(path: Path) -> None:
+    assert not top_level_imports(path) & MODEL_CLIENTS, path.name
+
+
+@pytest.mark.parametrize("path", _policy_files(), ids=lambda p: p.name)
+def test_policy_never_reads_the_clock(path: Path) -> None:
+    """now is a parameter. An engine that asks the OS what time it is is not testable."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            assert (node.value.id, node.attr) not in CLOCK_READERS, f"{path.name} reads the clock"
+
+
+def test_the_policy_walker_found_files() -> None:
+    assert _policy_files(), "the policy rules are vacuous if there are no policy files"

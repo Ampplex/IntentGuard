@@ -20,8 +20,7 @@ from intentguard.core import (
     from_rupees,
 )
 from intentguard.core.intent import ConfidenceField
-
-from .fixtures import a_ledger, a_trial_recurrence, an_offer
+from tests.fixtures import a_ledger, a_trial_recurrence, an_offer
 
 
 def _round_trip(model):

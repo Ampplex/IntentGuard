@@ -20,7 +20,7 @@ from pydantic import BaseModel
 import intentguard.core as core_pkg
 
 CORE_DIR = Path(core_pkg.__file__).parent
-TESTS_DIR = Path(__file__).parent
+TESTS_DIR = Path(__file__).parent.parent
 
 # Floats are legitimate for scores and durations. Money is never in this set.
 FLOAT_ALLOWED_FIELDS = {"confidence", "score", "weight", "similarity"}
@@ -81,7 +81,7 @@ def test_every_paise_field_is_an_integer() -> None:
                 assert field.annotation is int, f"{name}.{field_name} is not int"
 
 
-@pytest.mark.parametrize("path", sorted(TESTS_DIR.glob("*.py")), ids=lambda p: p.name)
+@pytest.mark.parametrize("path", sorted(TESTS_DIR.rglob("*.py")), ids=lambda p: p.name)
 def test_fixtures_never_write_money_as_a_decimal(path: Path) -> None:
     """The gate says no float in the money path including fixtures."""
     source = path.read_text(encoding="utf-8")

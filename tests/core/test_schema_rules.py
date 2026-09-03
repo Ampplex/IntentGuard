@@ -16,8 +16,7 @@ from intentguard.core import (
     ViolationCode,
     from_rupees,
 )
-
-from .fixtures import a_ledger, an_offer
+from tests.fixtures import a_ledger, an_offer
 
 
 def test_only_a_discount_may_be_negative() -> None:

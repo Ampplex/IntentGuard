@@ -6,8 +6,7 @@ from __future__ import annotations
 import json
 
 from intentguard.core import Offer, canonical_json, from_rupees, offer_hash
-
-from .fixtures import a_trial_recurrence, an_offer
+from tests.fixtures import a_trial_recurrence, an_offer
 
 
 def test_hash_is_stable_across_a_json_round_trip() -> None:
