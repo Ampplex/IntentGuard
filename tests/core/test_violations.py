@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from intentguard.core import DEFAULT_OUTCOME, EXPLANATION_TEMPLATES, Outcome, ViolationCode
 
-FROZEN_AT_STAGE_1 = {
+FROZEN = {
     "TOTAL_EXCEEDS_MAX",
     "TOTAL_MISMATCH",
     "NEGATIVE_TOTAL",
@@ -27,13 +27,23 @@ FROZEN_AT_STAGE_1 = {
     "UNMODELLED_FIELD",
     "LOW_CONFIDENCE",
     "UNCLASSIFIABLE_CONDITION",
+    # Added by Amendment 1 at stage 1 close.
+    "LEDGER_NOT_CONFIRMED",
+    "OFFER_MALFORMED",
+    "UNCLASSIFIABLE_CATEGORY",
 }
 
-ESCALATES = {"UNMODELLED_FIELD", "LOW_CONFIDENCE", "UNCLASSIFIABLE_CONDITION"}
+ESCALATES = {
+    "UNMODELLED_FIELD",
+    "LOW_CONFIDENCE",
+    "UNCLASSIFIABLE_CONDITION",
+    "UNCLASSIFIABLE_CATEGORY",
+    "LEDGER_NOT_CONFIRMED",
+}
 
 
 def test_the_list_has_not_drifted() -> None:
-    assert {code.value for code in ViolationCode} == FROZEN_AT_STAGE_1
+    assert {code.value for code in ViolationCode} == FROZEN
 
 
 def test_every_code_has_an_outcome() -> None:

@@ -133,3 +133,78 @@ Delegated, human-not-present commerce is the whole point of agentic checkout, so
 Approved as written, including all three deviations. `hashing.py` at stage 1 is the right call for the reason given — audit records written before canonicalization exists are unverifiable. Building the import walker a stage early is worth the hour.
 
 Proceed.
+
+---
+
+# Amendment 1 — stage 1 close
+
+Written by Claude at the end of stage 1, resolving the items flagged in the
+stage 1 report. Everything here is reversible; it is recorded rather than
+assumed so that a later stage cannot be built on a silent interpretation.
+
+## Confidence attaches as a parallel map, not a wrapper
+
+`HardConstraints` holds plain ints, strings and enums. `IntentLedger.confidence`
+is a validated `dict[str, float]` whose keys must name real constraint fields.
+
+The reason is structural rather than cosmetic. With a parallel map, `policy/`
+compares nothing but integers and enums, so a probabilistic number is incapable
+of reaching a money comparison — not by convention, but because the type it
+would have to travel in is not there. `ConfidenceField` remains in `core/` for
+the extractor's own use at stage 4.
+
+## Per-unit ceilings
+
+`max_total_paise` is always the order total. The question was what the extractor
+does with a per-unit phrasing, and the ruling is:
+
+- An explicit per-unit marker ("each", "per pair", "apiece") means multiply by
+  quantity. "3 shirts under ₹2000 each" becomes a ceiling of ₹6000.
+- No marker means order total. "3 shirts for under ₹2000" becomes ₹2000.
+- A phrasing that carries a quantity and a budget with no marker either way
+  ("get me 3 shirts, budget 2000") is ESCALATE. It is genuinely ambiguous to a
+  human reader, and guessing it wrong either blocks a legitimate order or
+  authorizes triple what the user meant.
+
+This is a labelling convention as much as a code rule, so it is settled before
+the gold set exists rather than during it.
+
+## Three violation codes added — the list is now nineteen
+
+Each of these existed as an outcome the specification requires but had no code
+to express. Adding them is what the freeze rule asks for: an explicit amendment,
+not a quiet addition. A list that keeps growing during implementation would
+itself be a signal that the semantics were underspecified, so it is worth
+noting that these are the only three, and that all three are about states the
+engine can reach rather than new kinds of violation.
+
+**`OFFER_MALFORMED`** (blocks). The offer models forbid extra fields, so an
+unknown key raises a validation error carrying `extra_forbidden`, which the gate
+translates into `UNMODELLED_FIELD` and escalates. A validation failure for any
+other reason had nothing to express it. It blocks rather than escalates: a human
+cannot usefully adjudicate an order that could not be read, and refusing it is
+safe.
+
+**`UNCLASSIFIABLE_CATEGORY`** (escalates). The category ruling says anything
+outside the controlled enum escalates, but only condition had a code for it.
+Overloading `UNMODELLED_FIELD` would have worked and been slightly dishonest —
+the field is modelled, the value is unrecognised. This mirrors
+`UNCLASSIFIABLE_CONDITION` exactly.
+
+**`LEDGER_NOT_CONFIRMED`** (escalates). A mandate in `AWAITING_CONFIRMATION` has
+not been authorized by the user yet. `SPENT` and `EXPIRED` each had a code and
+this state did not, which would have left the engine either silently allowing an
+unconfirmed mandate or blocking with a code that means something else.
+
+`EXECUTION_UNCERTAIN` deliberately does **not** get a code. It maps to
+`LEDGER_ALREADY_SPENT`, because in both states a payment attempt has consumed
+the authorization and the correct behaviour is identical. Flagging it as an
+interpretation rather than a reading.
+
+## The Decision coherence validator stays
+
+`Decision` refuses to be constructed as an ALLOW carrying violations, or as a
+BLOCK or ESCALATE carrying none. This is logic in a package specified as having
+none, and it stays, because the alternative is an audit trail that can contain a
+record asserting two contradictory things at once. It validates the shape of a
+record rather than deciding anything, which is the distinction that matters.

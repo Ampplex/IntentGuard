@@ -20,6 +20,7 @@ from .violations import (
     ESCALATING_CODES,
     EXPLANATION_TEMPLATES,
     ViolationCode,
+    explain,
 )
 
 __all__ = [
@@ -52,6 +53,7 @@ __all__ = [
     "ViolationCode",
     "canonical_json",
     "content_hash",
+    "explain",
     "format_paise",
     "from_rupees",
     "offer_hash",

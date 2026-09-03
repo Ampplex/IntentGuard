@@ -1,6 +1,7 @@
 """Violation vocabulary.
 
-This list is frozen. Adding a code requires an explicit amendment to
+This list is frozen at nineteen codes -- the sixteen set at stage 1 plus the
+three added by Amendment 1. Adding a code requires an explicit amendment to
 SPEC-DECISIONS.md, and tests/core/test_violations.py fails if the enum drifts
 from the frozen sixteen. The stage 2 gate is "a test per violation code", which
 is self-referential unless the list cannot quietly grow to match whatever got
@@ -29,9 +30,12 @@ class ViolationCode(StrEnum):
     PRODUCT_SUBSTITUTION = "PRODUCT_SUBSTITUTION"
     LEDGER_EXPIRED = "LEDGER_EXPIRED"
     LEDGER_ALREADY_SPENT = "LEDGER_ALREADY_SPENT"
+    LEDGER_NOT_CONFIRMED = "LEDGER_NOT_CONFIRMED"
+    OFFER_MALFORMED = "OFFER_MALFORMED"
     UNMODELLED_FIELD = "UNMODELLED_FIELD"
     LOW_CONFIDENCE = "LOW_CONFIDENCE"
     UNCLASSIFIABLE_CONDITION = "UNCLASSIFIABLE_CONDITION"
+    UNCLASSIFIABLE_CATEGORY = "UNCLASSIFIABLE_CATEGORY"
 
 
 ESCALATING_CODES = frozenset(
@@ -39,6 +43,8 @@ ESCALATING_CODES = frozenset(
         ViolationCode.UNMODELLED_FIELD,
         ViolationCode.LOW_CONFIDENCE,
         ViolationCode.UNCLASSIFIABLE_CONDITION,
+        ViolationCode.UNCLASSIFIABLE_CATEGORY,
+        ViolationCode.LEDGER_NOT_CONFIRMED,
     }
 )
 
@@ -110,9 +116,27 @@ EXPLANATION_TEMPLATES = MappingProxyType(
             "IntentGuard is not confident it read your instruction correctly ({observed}). "
             "Asking you before spending anything."
         ),
+        ViolationCode.LEDGER_NOT_CONFIRMED: (
+            "You have not confirmed this authorization yet, so nothing can be charged "
+            "against it. Asking you to confirm before going any further."
+        ),
+        ViolationCode.OFFER_MALFORMED: (
+            "The seller sent an order IntentGuard could not read: {observed}. Nothing was charged."
+        ),
+        ViolationCode.UNCLASSIFIABLE_CATEGORY: (
+            "The seller lists this item under {observed}, which is not a category "
+            "IntentGuard recognises. Asking you rather than guessing."
+        ),
         ViolationCode.UNCLASSIFIABLE_CONDITION: (
             "The seller describes this item as {observed}, which is not a condition "
             "IntentGuard recognises. Asking you rather than guessing."
         ),
     }
 )
+
+
+def explain(
+    code: ViolationCode, *, expected: str | None = None, observed: str | None = None
+) -> str:
+    """Fill a violation's template. Formatting, not judgement."""
+    return EXPLANATION_TEMPLATES[code].format(expected=expected, observed=observed)
