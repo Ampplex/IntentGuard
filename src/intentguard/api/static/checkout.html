@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IntentGuard checkout</title>
+<style>
+  :root {
+    --ground:#F4F6F7; --surface:#fff; --sunk:#EAEEF0; --ink:#12191E; --soft:#4A5964;
+    --faint:#7C8A94; --rule:#D7DEE2; --accent:#0F5F6B;
+    --allow:#1B6B4A; --allow-bg:#E3F1EA; --block:#962B27; --block-bg:#F8E7E6;
+    --escalate:#8F5A08; --escalate-bg:#FAEEDB;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --ground:#0D1317; --surface:#141D22; --sunk:#101A1F; --ink:#E3EAEE; --soft:#A3B2BB;
+    --faint:#75868F; --rule:#26333A; --accent:#52B4C0;
+    --allow:#58C08D; --allow-bg:#12291F; --block:#E0817C; --block-bg:#2B1917;
+    --escalate:#DDA457; --escalate-bg:#2A2113;}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:15px/1.55 ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:48px 24px 80px}
+  h1{font-size:1.9rem;letter-spacing:-.025em;margin:0 0 8px}
+  .sub{color:var(--soft);margin:0 0 6px}
+  .mode{display:inline-block;font-size:.7rem;font-weight:600;letter-spacing:.08em;
+    text-transform:uppercase;padding:3px 8px;border-radius:3px;
+    background:var(--escalate-bg);color:var(--escalate);margin-bottom:22px}
+  .card{background:var(--surface);border:1px solid var(--rule);border-radius:6px;
+    padding:20px 22px;margin-bottom:16px}
+  h2{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:0 0 12px}
+  label{display:block;font-size:.8rem;color:var(--faint);margin:12px 0 4px}
+  input,select{width:100%;padding:9px 11px;border:1px solid var(--rule);border-radius:4px;
+    background:var(--ground);color:var(--ink);font:inherit;font-family:var(--mono);font-size:.86rem}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  button{margin-top:18px;width:100%;padding:12px 16px;border:0;border-radius:5px;
+    background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  button.secondary{background:transparent;color:var(--accent);border:1px solid var(--rule)}
+  .out{margin-top:16px;padding:14px 16px;border-radius:5px;font-size:.9rem;display:none}
+  .out.show{display:block}
+  .out.ALLOW{background:var(--allow-bg);color:var(--allow)}
+  .out.BLOCK{background:var(--block-bg);color:var(--block)}
+  .out.ESCALATE{background:var(--escalate-bg);color:var(--escalate)}
+  .out .title{font-weight:600;margin-bottom:6px}
+  .out ul{margin:6px 0 0;padding-left:18px}
+  .out code{font-family:var(--mono);font-size:.82rem}
+  .note{font-size:.82rem;color:var(--faint);margin-top:10px}
+  .hint{font-family:var(--mono);font-size:.78rem;color:var(--faint);
+    background:var(--sunk);padding:10px 12px;border-radius:4px;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>IntentGuard checkout</h1>
+  <p class="sub">Razorpay Standard Checkout, wired through the authorization gate.
+    The amount is never sent from this page &mdash; the server derives it from the decision.</p>
+  <span class="mode">Razorpay test mode &middot; no real money moves</span>
+
+  <div class="card">
+    <h2>The user's mandate</h2>
+    <div class="row">
+      <div><label for="ceiling">Ceiling (rupees)</label>
+        <input id="ceiling" value="5000" inputmode="numeric"></div>
+      <div><label for="category">Category</label>
+        <select id="category">
+          <option value="footwear" selected>footwear</option>
+          <option value="electronics">electronics</option>
+          <option value="apparel">apparel</option>
+        </select></div>
+    </div>
+    <label for="recurring">Recurring charges</label>
+    <select id="recurring"><option value="false" selected>not authorised</option>
+      <option value="true">authorised</option></select>
+  </div>
+
+  <div class="card">
+    <h2>The merchant's offer</h2>
+    <div class="row">
+      <div><label for="price">Product price (rupees)</label>
+        <input id="price" value="4200" inputmode="numeric"></div>
+      <div><label for="shipping">Shipping (rupees)</label>
+        <input id="shipping" value="0" inputmode="numeric"></div>
+    </div>
+    <label for="sub">Hidden subscription after 30 days (rupees per month, 0 for none)</label>
+    <input id="sub" value="0" inputmode="numeric">
+
+    <button id="pay">Check and pay</button>
+    <button id="preset" class="secondary" type="button">Load a blocked example</button>
+
+    <div class="hint">Test card 4100 2800 0000 1007 &middot; CVV 123 &middot; expiry 12/26 &middot; any name.
+      Test UPI test@razorpay</div>
+    <div id="out" class="out"></div>
+  </div>
+</div>
+
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const out = $("out");
+const paise = id => Math.round(Number($(id).value || 0) * 100);
+
+function show(kind, title, html) {
+  out.className = "out show " + kind;
+  out.innerHTML = '<div class="title">' + title + "</div>" + (html || "");
+}
+
+function buildRequest() {
+  const items = [{ label: "Product", amount_paise: paise("price"), kind: "product" }];
+  if (paise("shipping") > 0) {
+    items.push({ label: "Shipping", amount_paise: paise("shipping"), kind: "shipping" });
+  }
+  const recurring = paise("sub") > 0
+    ? [{ label: "Subscription", amount_paise: paise("sub"), interval: "monthly", starts_after_days: 30 }]
+    : [];
+  return {
+    ledger: {
+      intent_id: "int_web_" + Date.now(),
+      raw_instruction: "Placed from the checkout demo page",
+      hard: {
+        category: $("category").value,
+        max_total_paise: paise("ceiling"),
+        currency: "INR",
+        quantity: 1,
+        quantity_mode: "exact",
+        condition: "new",
+        recurring_allowed: $("recurring").value === "true",
+      },
+      status: "ACTIVE",
+      ttl_seconds: 3600,
+    },
+    offer: {
+      offer_id: "off_web_" + Date.now(),
+      product: { product_id: "sku_web", title: "Demo product",
+                 category: $("category").value, condition: "new" },
+      quantity: 1,
+      currency: "INR",
+      line_items: items,
+      total_paise: items.reduce((t, i) => t + i.amount_paise, 0),
+      recurring: recurring,
+      emi: null,
+      raw_description: "Placed from the checkout demo page.",
+    },
+  };
+}
+
+async function verify(response) {
+  const res = await fetch("/api/verify-payment", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      razorpay_order_id: response.razorpay_order_id,
+      razorpay_payment_id: response.razorpay_payment_id,
+      razorpay_signature: response.razorpay_signature,
+    }),
+  });
+  const body = await res.json();
+  if (res.ok && body.verified) {
+    show("ALLOW", "Paid and verified",
+      "<div>Razorpay's signature checks out against the order, so this payment is genuine.</div>" +
+      "<code>" + body.payment_id + "</code>");
+  } else {
+    show("BLOCK", "Signature did not verify",
+      "<div>" + (body.detail || "The payment is not being treated as made.") + "</div>");
+  }
+}
+
+async function pay() {
+  $("pay").disabled = true;
+  show("ESCALATE", "Checking the offer against the mandate…");
+  try {
+    const cfg = await (await fetch("/api/config")).json();
+    const res = await fetch("/api/create-order", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildRequest()),
+    });
+    const body = await res.json();
+
+    if (res.status === 409) {
+      const reasons = (body.violations || []).map(v =>
+        "<li><code>" + v.code + "</code> &mdash; " + v.explanation + "</li>").join("");
+      show(body.decision, "Refused before the payment rail",
+        "<ul>" + reasons + "</ul>" +
+        "<div class='note'>Razorpay was not called. Not called and rolled back &mdash; not called.</div>");
+      return;
+    }
+    if (!res.ok) {
+      show("BLOCK", "Could not create the order", "<div>" + (body.detail || res.status) + "</div>");
+      return;
+    }
+
+    show("ALLOW", "Allowed — opening Razorpay",
+      "<div>The server derived <code>" + (body.amount / 100).toFixed(2) +
+      "</code> from the decision, not from this page.</div>");
+
+    const rzp = new Razorpay({
+      key: cfg.key_id,
+      order_id: body.order_id,
+      amount: body.amount,
+      currency: body.currency,
+      name: "IntentGuard",
+      description: "Authorised by the intent gate",
+      handler: verify,
+      modal: {
+        ondismiss: () => show("ESCALATE", "Checkout closed",
+          "<div>You closed the window before paying. Nothing was charged.</div>"),
+      },
+      theme: { color: "#0F5F6B" },
+    });
+    rzp.on("payment.failed", r => show("BLOCK", "Payment failed",
+      "<div>" + (r.error && r.error.description || "Razorpay reported a failure.") + "</div>" +
+      "<code>" + (r.error && r.error.reason || "") + "</code>"));
+    rzp.open();
+  } catch (err) {
+    show("BLOCK", "Something went wrong", "<div>" + err.message + "</div>");
+  } finally {
+    $("pay").disabled = false;
+  }
+}
+
+$("pay").addEventListener("click", pay);
+$("preset").addEventListener("click", () => {
+  $("price").value = "4200"; $("shipping").value = "0"; $("sub").value = "299";
+  show("ESCALATE", "Loaded a zero-cost trial that converts",
+    "<div>The total stays under the ceiling. The obligation is the problem.</div>");
+});
+</script>
+</body>
+</html>

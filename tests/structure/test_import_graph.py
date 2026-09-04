@@ -391,3 +391,48 @@ def test_no_live_razorpay_key_appears_anywhere_in_the_repository() -> None:
 
 def test_the_payments_walker_found_files() -> None:
     assert _payment_files()
+
+
+def test_no_credential_of_any_kind_is_committed() -> None:
+    """A key in the tree is the one mistake here that costs real money.
+
+    Widened past live Razorpay keys after real test credentials entered the
+    project: an AWS access key or a Razorpay secret in a tracked file is just as
+    bad, and both are invisible in a diff a few commits later. Needles are built
+    at runtime so this file does not match itself.
+    """
+    import subprocess
+
+    root = SRC.parent.parent
+    needles = {
+        # Assembled, like the others, or this file matches its own search.
+        "aws access key": "AKI" + "A",
+        "razorpay live key": "rzp_" + "live_",
+        "private key block": "-----BEGIN" + " PRIVATE KEY",
+    }
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=root, capture_output=True, text=True
+    ).stdout.split()
+
+    offenders = []
+    for name in tracked:
+        path = root / name
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for label, needle in needles.items():
+            if needle in text:
+                offenders.append(f"{name}: {label}")
+    assert not offenders, f"credentials in tracked files: {offenders}"
+
+
+def test_the_env_file_is_ignored() -> None:
+    """The file the credentials actually live in must never become trackable."""
+    import subprocess
+
+    root = SRC.parent.parent
+    result = subprocess.run(
+        ["git", "check-ignore", ".env"], cwd=root, capture_output=True, text=True
+    )
+    assert result.returncode == 0, ".env is not gitignored"

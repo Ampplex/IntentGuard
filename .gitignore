@@ -6,6 +6,9 @@ __pycache__/
 .hypothesis/
 .env
 *.db
+# Audit logs are runtime evidence, not source. A committed one is a real
+# decision trail from someone's machine leaking into the repository.
+data/api-audit.jsonl
 dist/
 build/
 *.egg-info/

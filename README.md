@@ -56,6 +56,7 @@ src/intentguard/
   semantic/   substitution and drift. Advisory to an escalation, never a block.
   payments/   Razorpay adapter, idempotency, the uncertain-execution path.
   bench/      generator (imports nothing from intentguard), harness, export, dashboard.
+  api/        Razorpay Standard Checkout, wired through the gate.
   gate/       orchestration, the wire boundary, escalation, timing, audit write.
   audit/      the tamper-evident trail, plus rendering and receipt verification.
   metrics/    measurement. Cannot import policy/, does no file I/O.
@@ -76,11 +77,35 @@ tests/
   bench/      generator independence, holdout stability, injection twins
   gate/       decision assembly, the boundary, receipts
   escalation/ pause, ask, resume, and what a human answer may and may not do
+  api/        the checkout surface cannot bypass the gate; signature verification
   audit/      chain integrity, tamper detection, receipt verification, rendering
   metrics/    checked against hand-computed answers
   gold/       the gold set is well formed and internally consistent
   structure/  import graph, clock reads, orphan codes, dataset independence
 ```
+
+## Checkout
+
+Razorpay Standard Checkout is integrated, and it is wired **through** the gate
+rather than around it. A stock create-order endpoint takes an amount from the
+request body; this one does not have an amount field at all. It takes a mandate
+and an offer, runs the engine, and uses the figure from the audit record the
+engine wrote. A BLOCK or an ESCALATE returns 409 and Razorpay is not called.
+
+```
+cp .env.example .env      # then fill in your rzp_test_ keys
+uv pip install -e ".[web]"
+.venv/bin/python -m intentguard.api.app     # http://127.0.0.1:8000
+```
+
+The key secret never leaves the server: the page fetches the key id from
+`/api/config`, and a test asserts the secret appears in no response and not in
+the served HTML. Payment signatures are verified with
+`HMAC-SHA256(order_id|payment_id)` compared using `hmac.compare_digest`, so a
+forged signature returns 400 and nothing is treated as paid.
+
+Test card `4100 2800 0000 1007`, CVV `123`, expiry `12/26`. Test UPI
+`test@razorpay`.
 
 ## Running it
 
