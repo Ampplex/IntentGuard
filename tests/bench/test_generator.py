@@ -53,17 +53,38 @@ def test_a_different_seed_gives_a_different_set() -> None:
     assert generator.generate(seed=1) != generator.generate(seed=2)
 
 
-def test_the_holdout_split_does_not_move_when_the_set_grows() -> None:
-    """Assigned by hashing the id, not by slicing.
+def test_the_split_is_reproducible_from_the_seed() -> None:
+    """Nobody can rerun until the holdout flatters.
 
-    Slicing would reshuffle which cases are held out every time the mix changes,
-    and a holdout that moves is a holdout that has been looked at.
+    Assignment is stratified rather than hashed per case, so it is not stable
+    against changing the mix. It is stable against rerunning, which is the
+    property that matters: the seed is fixed in main().
     """
-    small = {c["case_id"]: c["split"] for c in generator.generate(injection_rate=0)}
-    large = {c["case_id"]: c["split"] for c in generator.generate(injection_rate=50)}
-    shared = set(small) & set(large)
-    assert shared
-    assert all(small[case_id] == large[case_id] for case_id in shared)
+    first = {c["case_id"]: c["split"] for c in generator.generate(seed=11)}
+    second = {c["case_id"]: c["split"] for c in generator.generate(seed=11)}
+    assert first == second
+
+
+def test_the_holdout_looks_like_the_slice_it_stands_in_for() -> None:
+    """Hashing each id independently left the holdout nine points off on labels.
+
+    A holdout whose composition differs from the training slice produces a
+    number that describes neither, so it is stratified by kind and label.
+    """
+    train = Counter(c["label"] for c in CASES if c["split"] == "train")
+    holdout = Counter(c["label"] for c in CASES if c["split"] == "holdout")
+    train_n, holdout_n = sum(train.values()), sum(holdout.values())
+
+    for label in set(train) | set(holdout):
+        drift = abs(train[label] / train_n - holdout[label] / holdout_n)
+        assert drift < 0.03, f"{label} differs by {drift:.1%} between the splits"
+
+
+def test_every_kind_appears_in_the_holdout() -> None:
+    """A kind absent from the holdout is a kind the final number says nothing about."""
+    train_kinds = {c["kind"] for c in CASES if c["split"] == "train"}
+    holdout_kinds = {c["kind"] for c in CASES if c["split"] == "holdout"}
+    assert train_kinds == holdout_kinds
 
 
 def test_the_holdout_is_about_a_fifth_and_disjoint() -> None:
@@ -86,6 +107,37 @@ def test_all_three_outcomes_are_well_represented() -> None:
     counts = Counter(case["label"] for case in CASES)
     for outcome in Outcome:
         assert counts[outcome.value] >= 50, f"only {counts[outcome.value]} {outcome.value}"
+
+
+def test_no_violation_kind_carries_only_one_label() -> None:
+    """A set where every case of a kind is a violation cannot measure detection.
+
+    "Block anything with a shipping line" would have scored perfectly on
+    hidden_cost. Each violation kind is paired with a compliant offer of the
+    same shape, so the benchmark measures discrimination rather than pattern
+    matching.
+
+    Four kinds are legitimately single-label and are named: valid and the two
+    should-pass categories from the specification are all ALLOW by definition,
+    and an unmodelled field is always an escalation.
+    """
+    single_by_definition = {"valid", "discount", "shipping_upgrade", "unmodelled"}
+    by_kind: dict[str, set[str]] = {}
+    for case in CASES:
+        by_kind.setdefault(case["kind"], set()).add(case["label"])
+
+    offenders = {
+        kind: labels
+        for kind, labels in by_kind.items()
+        if len(labels) == 1 and kind not in single_by_definition
+    }
+    assert not offenders, f"kinds that cannot measure discrimination: {offenders}"
+
+
+def test_the_set_is_not_mostly_violations() -> None:
+    """A set that is nine tenths blocks makes a blocking detector look good."""
+    labels = Counter(case["label"] for case in CASES)
+    assert 0.35 <= labels["ALLOW"] / len(CASES) <= 0.6
 
 
 def test_every_case_says_which_rule_it_exercises() -> None:

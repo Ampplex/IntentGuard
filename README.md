@@ -62,7 +62,7 @@ src/intentguard/
 data/
   gold/       100 hand-labelled cases, held out. Cannot import intentguard.
   dev/        60-case confidence set and 30-pair substitution set. Same import ban.
-  synthetic/  1,444 generated cases, 20 percent held out by hash.
+  synthetic/  1,884 generated cases, a fifth of every kind and label held out.
 tests/
   core/       schemas, money, hashing, the no-float invariant
   policy/     one test per violation code, the threat table, regressions
@@ -125,11 +125,22 @@ quantity mode's edge. **That number is not evidence that the system is correct.*
 It means the engine and the generator read the specification the same way, which
 is what CLAUDE.md predicts when one repository writes both.
 
-Three mitigations, all structural rather than promised. The generator imports
-nothing from `intentguard` at all, enforced by a test. Twenty percent of the
-synthetic set is held out, assigned by hashing the case id so the split cannot
-drift as the mix changes. And the hand-labelled gold set has never been scored
-and nothing has ever been tuned against it.
+Four mitigations, all structural rather than promised.
+
+The generator imports nothing from `intentguard` at all, enforced by a test.
+
+Every violation kind is paired with a compliant offer of the same shape, so the
+set measures discrimination rather than the shape of a payload. Without those,
+thirteen of eighteen kinds carried a single label and "block anything with a
+shipping line" would have scored perfectly on hidden costs. The set is now
+roughly half allowed and half blocked.
+
+A fifth of every kind and label is held out, stratified rather than hashed per
+case. Hashing was uniform overall and still left the holdout nine points off the
+training slice on label mix; the splits now agree to within a fifth of a point.
+
+And the hand-labelled gold set has never been scored, with nothing ever tuned
+against it.
 
 Gold and synthetic are always reported separately. There is deliberately no
 function that merges two reports, and a test asserts there is not: they are

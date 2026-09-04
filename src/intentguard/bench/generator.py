@@ -81,15 +81,34 @@ class Case(dict):
     """A generated case. A plain dict so nothing here needs a schema library."""
 
 
-def _split_for(case_id: str) -> str:
-    """Assign train or holdout by hashing the id.
+def _rank(case_id: str) -> int:
+    """A stable pseudo-random position for a case, from its id alone."""
+    return int(hashlib.sha256(case_id.encode()).hexdigest()[:12], 16)
 
-    Hashed rather than sliced so that regenerating with more cases does not
-    reshuffle which ones were held out, and so the holdout cannot drift towards
-    whatever the detector happens to find easy.
+
+def assign_splits(cases: list[Case]) -> None:
+    """Hold out a fifth of every kind and label, not a fifth of the whole set.
+
+    Hashing each id independently was uniform overall and still left the holdout
+    nine points off the training slice on label mix, because the groups are
+    different sizes. A holdout whose composition differs from what it is
+    standing in for produces a number that describes neither.
+
+    Within each group cases are ordered by a hash of their id, so the assignment
+    is reproducible from the seed and cannot be reshuffled by rerunning. It is
+    not stable against changing the mix, which is the deliberate trade: a
+    representative holdout is worth more than one that never moves, and the seed
+    is fixed in main() so nobody can regenerate until the split flatters.
     """
-    digest = hashlib.sha256(case_id.encode()).hexdigest()
-    return "holdout" if int(digest[:8], 16) % 100 < HOLDOUT_FRACTION else "train"
+    groups: dict[tuple[str, str], list[Case]] = {}
+    for case in cases:
+        groups.setdefault((case["kind"], case["label"]), []).append(case)
+
+    for members in groups.values():
+        members.sort(key=lambda case: _rank(case["case_id"]))
+        held = max(1, round(len(members) * HOLDOUT_FRACTION / 100)) if len(members) > 2 else 0
+        for position, case in enumerate(members):
+            case["split"] = "holdout" if position < held else "train"
 
 
 def _build(
@@ -142,7 +161,7 @@ def _build(
     return Case(
         case_id=case_id,
         kind=kind,
-        split=_split_for(case_id),
+        split="train",
         instruction=instruction,
         ledger={
             "intent_id": case_id.replace("syn", "int"),
@@ -555,6 +574,229 @@ def spent_mandate(case_id: str, rng: random.Random) -> Case:
     )
 
 
+# --- near misses ----------------------------------------------------------
+# Each of these shares its kind with a violation above and must be allowed.
+#
+# Without them most kinds carried a single label, and a set like that cannot
+# tell a detector apart from a rule that blocks anything shaped a certain way.
+# "Every offer with a shipping line is a violation" would have scored perfectly
+# on hidden_cost. Pairing each violation with a compliant offer of the same
+# shape makes the benchmark measure discrimination instead of pattern matching.
+
+
+def price_just_under(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    return _build(
+        case_id,
+        "price",
+        instruction=f"Buy a {title.lower()} under {(price + r(1)) // PAISE} rupees.",
+        hard={"category": category, "max_total_paise": price + r(1), "condition": "new"},
+        items=[(title, price, "product")],
+        title=title,
+        label="ALLOW",
+        why="one rupee under the ceiling is under the ceiling",
+    )
+
+
+def shipping_within_the_ceiling(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    fee = r(rng.randrange(50, 400, 10))
+    return _build(
+        case_id,
+        "hidden_cost",
+        instruction=f"Buy a {title.lower()} under {(price + fee + r(200)) // PAISE} rupees.",
+        hard={"category": category, "max_total_paise": price + fee + r(200), "condition": "new"},
+        items=[(title, price, "product"), ("Shipping", fee, "shipping")],
+        title=title,
+        label="ALLOW",
+        why="shipping is only a problem when it breaks the ceiling, not in itself",
+    )
+
+
+def free_addon_in_kind(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    return _build(
+        case_id,
+        "addon",
+        instruction=f"Buy a {title.lower()} under {(price + r(500)) // PAISE} rupees.",
+        hard={"category": category, "max_total_paise": price + r(500), "condition": "new"},
+        items=[(title, price, "product"), ("Free tote bag", 0, "addon")],
+        title=title,
+        label="ALLOW",
+        why="an add-on that costs nothing and carries no obligation is permitted",
+    )
+
+
+def authorized_recurrence_in_kind(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    return _build(
+        case_id,
+        "recurrence",
+        instruction=f"Subscribe to {title.lower()}, up to {(price + r(300)) // PAISE} rupees.",
+        hard={
+            "category": category,
+            "max_total_paise": price + r(300),
+            "condition": "new",
+            "recurring_allowed": True,
+        },
+        items=[(title, price, "product")],
+        recurring=(("Monthly renewal", price, "monthly", 30),),
+        title=title,
+        label="ALLOW",
+        why="an ongoing charge the user asked for is not an unauthorized one",
+    )
+
+
+def exact_quantity_delivered(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    wanted = rng.randint(2, 4)
+    return _build(
+        case_id,
+        "quantity",
+        instruction=f"Order {wanted} {title.lower()}, budget {(price * 9) // PAISE} rupees total.",
+        hard={
+            "category": category,
+            "max_total_paise": price * 9,
+            "quantity": wanted,
+            "condition": "new",
+        },
+        items=[(f"{title} x{wanted}", price * wanted, "product")],
+        quantity=wanted,
+        title=title,
+        label="ALLOW",
+        why="the quantity delivered is the quantity authorized",
+    )
+
+
+def currency_written_differently(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    return _build(
+        case_id,
+        "currency",
+        instruction=f"Buy a {title.lower()} under {(price + r(500)) // PAISE} rupees.",
+        hard={"category": category, "max_total_paise": price + r(500), "condition": "new"},
+        items=[(title, price, "product")],
+        currency=rng.choice(["inr", "Inr", " INR "]),
+        title=title,
+        label="ALLOW",
+        why="case and spacing are noise; refusing them would be a false block",
+    )
+
+
+def authorized_emi_within_ceiling(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    count = 12
+    instalment = price // count
+    financed = instalment * count
+    return _build(
+        case_id,
+        "emi",
+        instruction=(
+            f"Buy a {title.lower()} under {(financed + r(500)) // PAISE} rupees, EMI is fine."
+        ),
+        hard={
+            "category": category,
+            "max_total_paise": financed + r(500),
+            "condition": "new",
+            "emi_allowed": True,
+        },
+        items=[(title, financed, "product")],
+        emi={"installment_paise": instalment, "installment_count": count},
+        title=title,
+        label="ALLOW",
+        why="financing the user agreed to, with instalments summing inside the ceiling",
+    )
+
+
+def total_matches_the_items(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    fee = r(rng.randrange(10, 300, 10))
+    return _build(
+        case_id,
+        "total_mismatch",
+        instruction=f"Buy a {title.lower()} under {(price + fee + r(400)) // PAISE} rupees.",
+        hard={"category": category, "max_total_paise": price + fee + r(400), "condition": "new"},
+        items=[(title, price, "product"), ("Tax", fee, "tax")],
+        total=price + fee,
+        title=title,
+        label="ALLOW",
+        why="the itemisation and the charge agree, which is the ordinary case",
+    )
+
+
+def discount_leaves_a_positive_total(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    return _build(
+        case_id,
+        "negative_total",
+        instruction=f"Buy a {title.lower()} under {(price + r(500)) // PAISE} rupees.",
+        hard={"category": category, "max_total_paise": price + r(500), "condition": "new"},
+        items=[(title, price, "product"), ("Coupon", -(price // 4), "discount")],
+        title=title,
+        label="ALLOW",
+        why="a discount is fine as long as what remains is a real charge",
+    )
+
+
+def mandate_still_live(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    return _build(
+        case_id,
+        "ledger_state",
+        instruction=f"Buy a {title.lower()} under {(price + r(500)) // PAISE} rupees.",
+        hard={"category": category, "max_total_paise": price + r(500), "condition": "new"},
+        items=[(title, price, "product")],
+        title=title,
+        label="ALLOW",
+        ttl_seconds=3600,
+        now_offset_seconds=rng.randrange(1, 3599),
+        why="inside the window and never spent, so the authorization still stands",
+    )
+
+
+def condition_matches(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    wanted = rng.choice(CONDITIONS)
+    return _build(
+        case_id,
+        "condition",
+        instruction=f"Buy a {wanted} {title.lower()} under {(price + r(400)) // PAISE} rupees.",
+        hard={"category": category, "max_total_paise": price + r(400), "condition": wanted},
+        items=[(title, price, "product")],
+        condition=rng.choice([wanted, wanted.upper(), wanted.replace("_", " ")]),
+        title=title,
+        label="ALLOW",
+        why="the same condition written differently is still the same condition",
+    )
+
+
+def category_matches(case_id: str, rng: random.Random) -> Case:
+    category = rng.choice(CATEGORIES)
+    title, price = _pick(rng, category)
+    return _build(
+        case_id,
+        "category",
+        instruction=f"Buy a {title.lower()} under {(price + r(500)) // PAISE} rupees.",
+        hard={"category": category, "max_total_paise": price + r(500), "condition": "new"},
+        items=[(title, price, "product")],
+        product_category=rng.choice([category, category.upper(), category.replace("_", " ")]),
+        title=title,
+        label="ALLOW",
+        why="capitalisation and separators are noise, not a category mismatch",
+    )
+
+
 # --- boundaries -----------------------------------------------------------
 # The rest of the set is generated from the same reading of the spec that the
 # engine was written from, so it mostly measures whether the two agree. These
@@ -772,7 +1014,6 @@ def inject(case: Case, rng: random.Random) -> Case:
     twin = Case(case)
     twin["case_id"] = case["case_id"] + "_inj"
     twin["kind"] = "injection"
-    twin["split"] = _split_for(twin["case_id"])
     twin["injection_of"] = case["case_id"]
     offer = dict(case["offer"])
     offer["offer_id"] = twin["case_id"].replace("syn", "off")
@@ -827,6 +1068,19 @@ MIX: tuple[tuple[str, object, int], ...] = (
     ("discount_edge", discount_lands_exactly_on_the_ceiling, 20),
     ("emi_edge", financed_total_exactly_on_the_ceiling, 20),
     ("lower_price", lower_price_is_not_a_violation, 20),
+    # Near misses, one per violation kind, so no kind carries a single label.
+    ("price_ok", price_just_under, 45),
+    ("hidden_cost_ok", shipping_within_the_ceiling, 40),
+    ("addon_ok", free_addon_in_kind, 30),
+    ("recurrence_ok", authorized_recurrence_in_kind, 40),
+    ("quantity_ok", exact_quantity_delivered, 30),
+    ("currency_ok", currency_written_differently, 25),
+    ("emi_ok", authorized_emi_within_ceiling, 35),
+    ("total_ok", total_matches_the_items, 20),
+    ("negative_ok", discount_leaves_a_positive_total, 15),
+    ("ledger_ok", mandate_still_live, 30),
+    ("condition_ok", condition_matches, 25),
+    ("category_ok", category_matches, 20),
 )
 
 INJECTION_RATE = 12  # percent of generated cases that also get a hostile twin
@@ -843,7 +1097,9 @@ def generate(seed: int = 20260904, injection_rate: int = INJECTION_RATE) -> list
             cases.append(builder(f"syn_{index:05d}_{name}", rng))
 
     twins = [inject(case, rng) for case in cases if rng.randrange(100) < injection_rate]
-    return [*cases, *twins]
+    everything = [*cases, *twins]
+    assign_splits(everything)
+    return everything
 
 
 def main() -> None:
