@@ -3,11 +3,18 @@
 Imports nothing but core/. No model client, no database, no clock.
 """
 
-from .checks import chargeable_total, check_exclusions, check_product_identity, outcome_for
+from .checks import (
+    CHECKS_PERFORMED,
+    chargeable_total,
+    check_exclusions,
+    check_product_identity,
+    outcome_for,
+)
 from .engine import evaluate
 from .normalise import to_category, to_condition
 
 __all__ = [
+    "CHECKS_PERFORMED",
     "chargeable_total",
     "check_exclusions",
     "check_product_identity",

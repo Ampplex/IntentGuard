@@ -388,6 +388,23 @@ def check_product_identity(ledger: IntentLedger, offer: Offer) -> list[Violation
     ]
 
 
+# Named so a compliance receipt can state what was actually checked rather than
+# claiming "all constraints". A merchant defending a chargeback needs the list.
+CHECKS_PERFORMED = (
+    "mandate_state",
+    "currency",
+    "totals",
+    "quantity",
+    "recurrence",
+    "emi",
+    "addons",
+    "condition",
+    "category",
+    "product_identity",
+    "exclusions",
+)
+
+
 def outcome_for(violations: list[Violation]) -> Outcome:
     """A definite violation outranks an uncertain one.
 

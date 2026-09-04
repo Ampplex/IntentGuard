@@ -93,7 +93,8 @@ EXPLANATION_TEMPLATES = MappingProxyType(
             "This order adds {observed}, which you did not authorize. Nothing was charged."
         ),
         ViolationCode.CONDITION_MISMATCH: (
-            "You asked for an item in {expected} condition, but this one is {observed}."
+            "You asked for an item in {expected} condition, but this one is {observed}. "
+            "Nothing was charged."
         ),
         ViolationCode.CATEGORY_MISMATCH: (
             "You authorized a purchase in {expected}, but this item is listed under {observed}."
@@ -111,7 +112,7 @@ EXPLANATION_TEMPLATES = MappingProxyType(
         ),
         ViolationCode.LEDGER_ALREADY_SPENT: (
             "This authorization was already used for another order. Each one covers a "
-            "single purchase."
+            "single purchase, so nothing was charged."
         ),
         ViolationCode.UNMODELLED_FIELD: (
             "This offer contains something IntentGuard has no way to check: {observed}. "

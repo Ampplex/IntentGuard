@@ -73,7 +73,17 @@ def test_the_walker_actually_sees_imports() -> None:
     assert "pydantic" in set().union(*found.values())
 
 
-POLICY_MAY_NOT_IMPORT = {"semantic", "ledger", "gate", "payments", "merchant", "buyer", "bench"}
+POLICY_MAY_NOT_IMPORT = {
+    "semantic",
+    "ledger",
+    "gate",
+    "payments",
+    "merchant",
+    "buyer",
+    "bench",
+    "audit",
+    "metrics",
+}
 
 CLOCK_READERS = {
     ("datetime", "now"),
@@ -161,3 +171,25 @@ def test_gold_authoring_cannot_reach_the_implementation(path: Path) -> None:
 
 def test_the_gold_directory_was_actually_found() -> None:
     assert sorted(GOLD_DIR.glob("*.py")), "the gold import rule is vacuous with no files"
+
+
+def _metrics_files():
+    return sorted((SRC / "metrics").rglob("*.py"))
+
+
+@pytest.mark.parametrize("path", _metrics_files(), ids=lambda p: p.name)
+def test_metrics_does_not_import_the_thing_it_measures(path: Path) -> None:
+    """Measurement takes observations, not an engine.
+
+    A metrics module that can call the engine can quietly re-run a case until the
+    number looks better, and a reader cannot tell from the report that it did.
+    Keeping it to pure functions over recorded outcomes removes the option.
+    """
+    assert "policy" not in sibling_packages_reached(path), path.name
+
+
+@pytest.mark.parametrize("path", _metrics_files(), ids=lambda p: p.name)
+def test_metrics_does_no_file_io(path: Path) -> None:
+    """Reports are computed, not read from somewhere convenient."""
+    forbidden = {"open", "requests", "sqlite3", "urllib"}
+    assert not top_level_imports(path) & forbidden, path.name
