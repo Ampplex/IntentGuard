@@ -19,7 +19,9 @@ from ..core.enums import Outcome
 from ..core.hashing import content_hash, offer_hash
 from ..core.intent import IntentLedger
 from ..core.offer import Offer
-from ..policy import CHECKS_PERFORMED, evaluate
+from ..policy import CHECKS_PERFORMED, evaluate, outcome_for
+from ..semantic.drift import score_drift
+from ..semantic.substitution import assess_substitution
 
 _MS = 1000.0
 
@@ -47,25 +49,49 @@ def run_gate(
     now: datetime,
     log: AuditLog | None = None,
     human_confirmed: bool = False,
+    negotiated_product: str | None = None,
 ) -> tuple[Decision, AuditRecord]:
-    """Decide, time, record. The audit record is written before anything else acts."""
+    """Decide, time, record. The audit record is written before anything else acts.
+
+    The deterministic engine runs first and its result stands on its own. What
+    the semantic layer adds can only ever be an escalation, so it can turn an
+    ALLOW into a question but can never turn a BLOCK into anything else and can
+    never produce a block of its own.
+
+    negotiated_product is what the merchant was offering when the negotiation
+    opened. A swap partway through is invisible to any check that only sees the
+    final cart, which is the whole reason it is passed in.
+    """
     started = time.perf_counter()
 
     arithmetic_started = time.perf_counter()
     result = evaluate(ledger, offer, now=now)
     arithmetic_ms = (time.perf_counter() - arithmetic_started) * _MS
 
+    semantic_started = time.perf_counter()
+    drift = score_drift(ledger, offer)
+    semantic_violations = (
+        assess_substitution(negotiated_product, offer.product.title) if negotiated_product else []
+    )
+    semantic_ms = (time.perf_counter() - semantic_started) * _MS
+
+    violations = [*result.violations, *semantic_violations]
+    outcome = outcome_for(violations)
+
     latency = LatencyBreakdown(
         arithmetic_ms=arithmetic_ms,
+        semantic_ms=semantic_ms,
+        drift_ms=semantic_ms,
         total_ms=(time.perf_counter() - started) * _MS,
     )
 
     decision = Decision(
-        decision=result.outcome,
+        decision=outcome,
         intent_id=ledger.intent_id,
         offer_id=offer.offer_id,
-        violations=result.violations,
-        escalation_question=escalation_question(result.outcome, result.violations),
+        violations=violations,
+        drift=drift,
+        escalation_question=escalation_question(outcome, violations),
         latency_ms=latency,
         checked_at=now,
     )
@@ -78,8 +104,8 @@ def run_gate(
         offer_id=offer.offer_id,
         mandate_hash=content_hash(ledger),
         offer_hash=offer_hash(offer),
-        decision=result.outcome,
-        violations=result.violations,
+        decision=outcome,
+        violations=violations,
         checked_total_paise=result.checked_total_paise,
         max_total_paise=ledger.hard.max_total_paise,
         latency_ms=latency,

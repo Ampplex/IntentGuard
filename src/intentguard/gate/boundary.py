@@ -89,13 +89,21 @@ def receive(
     now: datetime,
     log: AuditLog | None = None,
     human_confirmed: bool = False,
+    negotiated_product: str | None = None,
 ) -> tuple[Decision, AuditRecord]:
     """Take a merchant's document and answer it. The entry point for the wire."""
     try:
         offer = Offer.model_validate(payload)
     except ValidationError as error:
         return _refuse(ledger, payload, error, now=now, log=log, human_confirmed=human_confirmed)
-    return run_gate(ledger, offer, now=now, log=log, human_confirmed=human_confirmed)
+    return run_gate(
+        ledger,
+        offer,
+        now=now,
+        log=log,
+        human_confirmed=human_confirmed,
+        negotiated_product=negotiated_product,
+    )
 
 
 def _refuse(

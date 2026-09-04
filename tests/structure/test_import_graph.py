@@ -305,3 +305,44 @@ def test_the_buyer_does_not_reach_the_engine(path: Path) -> None:
 
 def test_the_buyer_walker_found_files() -> None:
     assert _buyer_files()
+
+
+def _semantic_files():
+    return sorted((SRC / "semantic").rglob("*.py"))
+
+
+@pytest.mark.parametrize("path", _semantic_files(), ids=lambda p: p.name)
+def test_semantic_does_not_reach_the_engine(path: Path) -> None:
+    """The engine must not depend on it and it must not reach back.
+
+    policy/ already cannot import semantic/, which is what makes the decision
+    deterministic. This is the other direction: semantic/ deciding anything by
+    calling the engine would put a probabilistic judgement inside a path that
+    reports itself as arithmetic.
+    """
+    forbidden = {"policy", "gate", "ledger", "audit", "payments", "merchant", "buyer"}
+    assert not sibling_packages_reached(path) & forbidden, path.name
+
+
+def test_semantic_never_emits_a_blocking_outcome() -> None:
+    """The rule from Amendment 3, read out of the source.
+
+    A similarity score gating a payment is the thing this project argues
+    against, so no file here may name Outcome.BLOCK at all. A behavioural test
+    can only cover the inputs it thought of; this covers the ones it did not.
+    """
+    for path in _semantic_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        blocking = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and node.attr == "BLOCK"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "Outcome"
+        ]
+        assert not blocking, f"{path.name} can emit a BLOCK from a similarity score"
+
+
+def test_the_semantic_walker_found_files() -> None:
+    assert _semantic_files()
