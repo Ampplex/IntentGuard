@@ -7,6 +7,7 @@ from .checks import (
     CHECKS_PERFORMED,
     chargeable_total,
     check_exclusions,
+    check_mandate_feasibility,
     check_product_identity,
     outcome_for,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "CHECKS_PERFORMED",
     "chargeable_total",
     "check_exclusions",
+    "check_mandate_feasibility",
     "check_product_identity",
     "evaluate",
     "outcome_for",

@@ -7,6 +7,9 @@ dependencies = ["pydantic>=2.7"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.5"]
+# Optional on purpose: the rule-based extractor runs the demo and the whole
+# test suite without a network call or an API key.
+llm = ["anthropic>=1.0"]
 
 [build-system]
 requires = ["hatchling"]

@@ -32,6 +32,7 @@ def evaluate(ledger: IntentLedger, offer: Offer, *, now: datetime) -> PolicyResu
     checked_total = checks.chargeable_total(offer)
     violations: list[Violation] = [
         *checks.check_ledger_state(ledger, now),
+        *checks.check_mandate_feasibility(ledger),
         *checks.check_currency(ledger, offer),
         *checks.check_totals(ledger, offer, checked_total),
         *checks.check_quantity(ledger, offer),

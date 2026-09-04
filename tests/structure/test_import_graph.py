@@ -155,12 +155,13 @@ def test_the_policy_walker_found_files() -> None:
     assert _policy_files(), "the policy rules are vacuous if there are no policy files"
 
 
-GOLD_DIR = SRC.parent.parent / "data" / "gold"
+DATA_DIR = SRC.parent.parent / "data"
+GOLD_DIR = DATA_DIR / "gold"
 
 
 @pytest.mark.parametrize("path", sorted(GOLD_DIR.glob("*.py")), ids=lambda p: p.name)
-def test_gold_authoring_cannot_reach_the_implementation(path: Path) -> None:
-    """The gold set's only value is independence from the code it judges.
+def test_dataset_authoring_cannot_reach_the_implementation(path: Path) -> None:
+    """A dataset's only value is independence from the code it judges.
 
     A labelling script that can import intentguard can be tuned against it,
     whether or not anyone meant to. Removing the possibility is cheaper than
@@ -169,8 +170,10 @@ def test_gold_authoring_cannot_reach_the_implementation(path: Path) -> None:
     assert "intentguard" not in top_level_imports(path), path.name
 
 
-def test_the_gold_directory_was_actually_found() -> None:
-    assert sorted(GOLD_DIR.glob("*.py")), "the gold import rule is vacuous with no files"
+def test_the_dataset_directories_were_actually_found() -> None:
+    found = sorted(DATA_DIR.rglob("*.py"))
+    assert found, "the dataset import rule is vacuous with no files"
+    assert {p.parent.name for p in found} >= {"gold", "dev"}
 
 
 def _metrics_files():

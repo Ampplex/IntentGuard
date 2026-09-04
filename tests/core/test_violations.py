@@ -33,6 +33,8 @@ FROZEN = {
     "UNCLASSIFIABLE_CATEGORY",
     # Added by Amendment 4, closing the gap the gold set found.
     "EXCLUDED_ITEM",
+    # Added by Amendment 6 with the extractor, which can now produce one.
+    "MANDATE_INFEASIBLE",
 }
 
 ESCALATES = {
@@ -41,6 +43,7 @@ ESCALATES = {
     "UNCLASSIFIABLE_CONDITION",
     "UNCLASSIFIABLE_CATEGORY",
     "LEDGER_NOT_CONFIRMED",
+    "MANDATE_INFEASIBLE",
 }
 
 

@@ -524,3 +524,82 @@ fixed. The score is now 90 percent overall, and the missing ten percent is
 honest rather than fixable: `LEDGER_ALREADY_SPENT` and `LEDGER_NOT_CONFIRMED`
 score zero on specificity because the fault is the mandate's state and there is
 no figure in the offer to name. Exempting them would be gaming the metric.
+
+---
+
+# Amendment 6 — stage 4, extraction and confidence
+
+## MANDATE_INFEASIBLE, code 21
+
+A mandate can contradict itself. "Buy me new shoes, nothing new" is not low
+confidence -- the extractor can be entirely certain it read that correctly -- and
+it is not the merchant's fault either. It is a question only the user can settle,
+so it escalates.
+
+Only contradictions the schema can express are checked: a condition that is also
+excluded, a named product that is also excluded, an excluded category, and a
+ceiling of zero. A per-unit limit conflicting with an order cap is not among
+them, because there is one ceiling field; that ambiguity is caught earlier, at
+extraction, and escalates there.
+
+## The model never touches a number
+
+`ExtractedIntent` has no field holding paise. The model reports the limit as the
+text the user wrote -- "5,000" -- and the deterministic parser converts it. The
+model does no arithmetic, so it cannot be argued into arithmetic that favours a
+merchant. A test asserts no field name ends in `_paise` and none is a float.
+
+It also has no vocabulary for approval. A test asserts no field name appears in a
+list of decision words. That is the structural half of the injection defence and
+it is a property of the schema, not of the prompt: a fully manipulated model can
+only return fields, and fields are judged by arithmetic.
+
+## Two extractors, and the offline one is not a mock
+
+`RuleBasedExtractor` is deterministic, needs no network, and is what the tests
+run against. It is a real fallback rather than a stub: the demo works with no API
+key, and a deployment that loses its key degrades to narrower recall instead of
+failing open. `ClaudeExtractor` is the real path, with the client injected so the
+network stays out of the tests.
+
+Multi-sample agreement is the second half of the confidence hybrid and runs only
+for fields the cheap rules already flagged. Where samples disagree the field is
+dropped to null rather than voted through: a field the model cannot reproduce
+across identical prompts is one the instruction did not really contain, and a
+null escalates instead of producing a confident wrong answer.
+
+## Calibration, and what the data actually said
+
+CLAUDE.md's stage 4 gate says confidence should correlate with correctness on the
+gold set. This amendment says gold is scored once at the end and tuned on never,
+and it wins. Both hold by calibrating against `data/dev/calibration.json`: 40
+hand-written instructions labelled USABLE or ASK, authored for this purpose,
+under the same import ban as the gold set.
+
+Running it found two defects in the scoring rather than a bad threshold.
+
+Vague terms were matched as substrings, so "refurbished" tripped the rule for
+"ish" and dragged a perfectly clear instruction from 1.00 to 0.45. Matching is
+now on word boundaries.
+
+The multi-unit ambiguity penalty fired on "up to 3 reams, budget 1500", where a
+total reading is the only natural one -- a per-item limit paired with an upper
+bound on the count would be a strange thing to say. The penalty now applies only
+to an exact count.
+
+With both fixed the classes separate completely: every USABLE case scores 1.00,
+the highest ASK case scores 0.55, and the gap is 0.45. Any threshold in that band
+classifies the set perfectly.
+
+**So the invented 0.85 survives, and the honest statement is narrower than it
+looks.** The data does not say 0.85 is right; it says the classes separate so
+cleanly that 0.85 is one of many values that work. It is kept because it sits at
+the conservative end of the band, and asking one time too many costs a question
+while accepting one time too many costs money.
+
+**And the clean separation is itself suspicious.** The same author wrote the
+extractor and the calibration set, which is the independence problem the gold set
+exists to avoid, at a smaller scale. Forty hand-written instructions are almost
+certainly easier than real ones. The number to trust is the one the gold set
+produces at stage 9, and this band should be re-derived against the synthetic set
+when it exists.

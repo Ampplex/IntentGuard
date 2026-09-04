@@ -1,7 +1,8 @@
 """Violation vocabulary.
 
-This list is frozen at twenty codes -- the sixteen set at stage 1, three added
-by Amendment 1, and EXCLUDED_ITEM added by Amendment 4. Adding a code requires
+This list is frozen at twenty-one codes -- sixteen set at stage 1, three added
+by Amendment 1, EXCLUDED_ITEM by Amendment 4, and MANDATE_INFEASIBLE by
+Amendment 6. Adding a code requires
 an explicit amendment to SPEC-DECISIONS.md, and tests/core/test_violations.py
 fails if the enum drifts from that list. The stage 2 gate is "a test per violation code", which
 is self-referential unless the list cannot quietly grow to match whatever got
@@ -30,6 +31,7 @@ class ViolationCode(StrEnum):
     CATEGORY_MISMATCH = "CATEGORY_MISMATCH"
     PRODUCT_SUBSTITUTION = "PRODUCT_SUBSTITUTION"
     EXCLUDED_ITEM = "EXCLUDED_ITEM"
+    MANDATE_INFEASIBLE = "MANDATE_INFEASIBLE"
     LEDGER_EXPIRED = "LEDGER_EXPIRED"
     LEDGER_ALREADY_SPENT = "LEDGER_ALREADY_SPENT"
     LEDGER_NOT_CONFIRMED = "LEDGER_NOT_CONFIRMED"
@@ -47,6 +49,7 @@ ESCALATING_CODES = frozenset(
         ViolationCode.UNCLASSIFIABLE_CONDITION,
         ViolationCode.UNCLASSIFIABLE_CATEGORY,
         ViolationCode.LEDGER_NOT_CONFIRMED,
+        ViolationCode.MANDATE_INFEASIBLE,
     }
 )
 
@@ -98,6 +101,11 @@ EXPLANATION_TEMPLATES = MappingProxyType(
         ),
         ViolationCode.CATEGORY_MISMATCH: (
             "You authorized a purchase in {expected}, but this item is listed under {observed}."
+        ),
+        ViolationCode.MANDATE_INFEASIBLE: (
+            "Your instructions contradict each other: {observed}. No order could "
+            "satisfy both, so nothing was charged and nothing will be until you "
+            "confirm which you meant."
         ),
         ViolationCode.EXCLUDED_ITEM: (
             "You ruled out {expected}, and this order contains it: {observed}. Nothing was charged."

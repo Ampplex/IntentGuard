@@ -1,0 +1,202 @@
+[
+  {
+    "instruction": "Buy me a pair of running shoes, budget 5000 rupees.",
+    "verdict": "USABLE",
+    "why": "category, bound and number all present"
+  },
+  {
+    "instruction": "Order a paperback novel for under Rs 700.",
+    "verdict": "USABLE",
+    "why": "explicit bound and currency"
+  },
+  {
+    "instruction": "Get wireless earphones for no more than 3000.",
+    "verdict": "USABLE",
+    "why": "explicit bound"
+  },
+  {
+    "instruction": "Buy a yoga mat, up to 1200 rupees all in.",
+    "verdict": "USABLE",
+    "why": "all in settles the per-unit question"
+  },
+  {
+    "instruction": "Order 2 cotton t-shirts, budget 1600 total.",
+    "verdict": "USABLE",
+    "why": "total settles the per-unit question"
+  },
+  {
+    "instruction": "Buy a refurbished laptop under 40000.",
+    "verdict": "USABLE",
+    "why": "condition and bound both explicit"
+  },
+  {
+    "instruction": "Get a table lamp under 2500 rupees.",
+    "verdict": "USABLE",
+    "why": "plain"
+  },
+  {
+    "instruction": "Buy a cricket bat, no more than 4000.",
+    "verdict": "USABLE",
+    "why": "plain bound"
+  },
+  {
+    "instruction": "Order a face serum under 1500, add-ons are fine.",
+    "verdict": "USABLE",
+    "why": "flag stated explicitly"
+  },
+  {
+    "instruction": "Buy a kettle for under 2000.",
+    "verdict": "USABLE",
+    "why": "plain"
+  },
+  {
+    "instruction": "Get me up to 3 reams of paper, budget 1500.",
+    "verdict": "USABLE",
+    "why": "quantity mode and bound both explicit"
+  },
+  {
+    "instruction": "Order at least 4 bars of soap, under 600.",
+    "verdict": "USABLE",
+    "why": "quantity mode and bound both explicit"
+  },
+  {
+    "instruction": "Buy a backpack under 3000, nothing in leather.",
+    "verdict": "USABLE",
+    "why": "exclusion stated plainly"
+  },
+  {
+    "instruction": "Buy running shoes under 5000, no subscriptions.",
+    "verdict": "USABLE",
+    "why": "recurrence ruled out explicitly"
+  },
+  {
+    "instruction": "Get me 3 shirts under 2000 each.",
+    "verdict": "USABLE",
+    "why": "each marks the limit as per unit"
+  },
+  {
+    "instruction": "Order a wall clock, no more than 1500.",
+    "verdict": "USABLE",
+    "why": "plain"
+  },
+  {
+    "instruction": "Buy a phone charger under 1500, standard delivery is fine.",
+    "verdict": "USABLE",
+    "why": "plain"
+  },
+  {
+    "instruction": "Order a chess set under 3000.",
+    "verdict": "USABLE",
+    "why": "plain"
+  },
+  {
+    "instruction": "Buy a monitor under 14000.",
+    "verdict": "USABLE",
+    "why": "plain"
+  },
+  {
+    "instruction": "Get a coffee grinder, max 4500.",
+    "verdict": "USABLE",
+    "why": "max is a bound word"
+  },
+  {
+    "instruction": "Buy an open box television under 30000.",
+    "verdict": "USABLE",
+    "why": "condition and bound explicit"
+  },
+  {
+    "instruction": "Order a suitcase under 7000.",
+    "verdict": "USABLE",
+    "why": "plain"
+  },
+  {
+    "instruction": "Get me a decent laptop, nothing too pricey.",
+    "verdict": "ASK",
+    "why": "no defensible ceiling exists in the words"
+  },
+  {
+    "instruction": "Buy something nice for the office.",
+    "verdict": "ASK",
+    "why": "neither a ceiling nor a category"
+  },
+  {
+    "instruction": "Order lunch for the team.",
+    "verdict": "ASK",
+    "why": "no ceiling, no quantity, no size of team"
+  },
+  {
+    "instruction": "Buy a few notebooks, keep it cheap.",
+    "verdict": "ASK",
+    "why": "a few is not a quantity, cheap is not a ceiling"
+  },
+  {
+    "instruction": "Replace my old headphones with something similar.",
+    "verdict": "ASK",
+    "why": "similar to a thing never seen"
+  },
+  {
+    "instruction": "Get me 3 shirts, budget 2000.",
+    "verdict": "ASK",
+    "why": "per unit or total is genuinely ambiguous"
+  },
+  {
+    "instruction": "Buy 4 mugs, budget 900.",
+    "verdict": "ASK",
+    "why": "same ambiguity, different words"
+  },
+  {
+    "instruction": "Get a good pair of boots, reasonable price.",
+    "verdict": "ASK",
+    "why": "reasonable is not a number"
+  },
+  {
+    "instruction": "Order some protein powder, not too expensive.",
+    "verdict": "ASK",
+    "why": "some, and no ceiling"
+  },
+  {
+    "instruction": "Buy the cheapest laptop that is any good.",
+    "verdict": "ASK",
+    "why": "cheapest is a strategy, not a limit"
+  },
+  {
+    "instruction": "Get me a couple of water bottles when you can.",
+    "verdict": "ASK",
+    "why": "a couple hedges the quantity"
+  },
+  {
+    "instruction": "Buy a phone, around 20000 or so.",
+    "verdict": "ASK",
+    "why": "around and or so both hedge the ceiling"
+  },
+  {
+    "instruction": "Order a birthday gift, roughly 2000.",
+    "verdict": "ASK",
+    "why": "roughly hedges, and gift is not a category"
+  },
+  {
+    "instruction": "Buy me whatever running shoes look best.",
+    "verdict": "ASK",
+    "why": "no ceiling at all"
+  },
+  {
+    "instruction": "Get a premium coffee machine.",
+    "verdict": "ASK",
+    "why": "premium is not a price"
+  },
+  {
+    "instruction": "Order 2 jackets, budget 8000.",
+    "verdict": "ASK",
+    "why": "per unit or total is ambiguous"
+  },
+  {
+    "instruction": "Buy several pairs of socks under 800.",
+    "verdict": "ASK",
+    "why": "several hedges the quantity"
+  },
+  {
+    "instruction": "Get a laptop bag, maybe 3000.",
+    "verdict": "ASK",
+    "why": "maybe hedges the ceiling"
+  }
+]

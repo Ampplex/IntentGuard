@@ -388,10 +388,53 @@ def check_product_identity(ledger: IntentLedger, offer: Offer) -> list[Violation
     ]
 
 
+def check_mandate_feasibility(ledger: IntentLedger) -> list[Violation]:
+    """Does the mandate contradict itself, before any offer is even considered?
+
+    A contradiction is not the merchant's fault and it is not low confidence
+    either -- the extractor can be entirely certain it read "buy me new shoes,
+    nothing new" correctly. It is a question only the user can settle, so it
+    escalates.
+
+    Only contradictions the schema can actually express are checked. A per-unit
+    limit that conflicts with an order cap is not among them, because there is
+    one ceiling field; that ambiguity is caught earlier, at extraction, and
+    escalates there.
+    """
+    hard = ledger.hard
+    excluded = {term.strip().lower() for term in hard.exclusions if term.strip()}
+    if not excluded and hard.max_total_paise > 0:
+        return []
+
+    conflicts: list[str] = []
+    if hard.condition is not None and Condition(hard.condition).value in excluded:
+        conflicts.append(f"you asked for {Condition(hard.condition).value} and also ruled it out")
+    if hard.product_ref:
+        reference = hard.product_ref.lower()
+        for term in sorted(excluded):
+            if re.search(rf"\b{re.escape(term)}\b", reference):
+                conflicts.append(f"you named {hard.product_ref} and also ruled out {term}")
+    if Category(hard.category).value in excluded:
+        conflicts.append(f"you asked for {Category(hard.category).value} and also ruled it out")
+    if hard.max_total_paise == 0:
+        conflicts.append("the spending limit is nothing at all")
+
+    if not conflicts:
+        return []
+    return [
+        _violation(
+            ViolationCode.MANDATE_INFEASIBLE,
+            field="hard",
+            observed="; ".join(conflicts),
+        )
+    ]
+
+
 # Named so a compliance receipt can state what was actually checked rather than
 # claiming "all constraints". A merchant defending a chargeback needs the list.
 CHECKS_PERFORMED = (
     "mandate_state",
+    "mandate_feasibility",
     "currency",
     "totals",
     "quantity",
