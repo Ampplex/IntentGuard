@@ -196,3 +196,40 @@ def test_metrics_does_no_file_io(path: Path) -> None:
     """Reports are computed, not read from somewhere convenient."""
     forbidden = {"open", "requests", "sqlite3", "urllib"}
     assert not top_level_imports(path) & forbidden, path.name
+
+
+def _merchant_files():
+    return sorted((SRC / "merchant").rglob("*.py"))
+
+
+@pytest.mark.parametrize("path", _merchant_files(), ids=lambda p: p.name)
+def test_the_merchant_cannot_reach_the_mandate_or_the_engine(path: Path) -> None:
+    """The untrusted side gets a projection, not the objects behind it.
+
+    A merchant module that can import IntentLedger can read a ceiling out of one,
+    and the bounded view becomes decorative. It may import core schemas it needs
+    to build an offer, and nothing else.
+    """
+    forbidden = {"policy", "gate", "ledger", "audit", "payments", "metrics"}
+    assert not sibling_packages_reached(path) & forbidden, path.name
+
+
+@pytest.mark.parametrize("path", _merchant_files(), ids=lambda p: p.name)
+def test_the_merchant_never_reads_the_ceiling(path: Path) -> None:
+    """No merchant file accesses .max_total_paise on anything.
+
+    Parsed rather than grepped, because projection.py explains at length why the
+    ceiling is withheld and a text search cannot tell prose from a leak. The
+    string is allowed to appear; reading the attribute is not.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    reads = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr == "max_total_paise"
+    ]
+    assert not reads, f"{path.name} reads the ceiling off an object"
+
+
+def test_the_merchant_walker_found_files() -> None:
+    assert _merchant_files()
