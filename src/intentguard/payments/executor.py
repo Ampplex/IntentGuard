@@ -37,6 +37,8 @@ from .razorpay import MINIMUM_AMOUNT_PAISE, PaymentRefused, PaymentTimeout, Razo
 
 class Execution(StrEnum):
     NOT_AUTHORIZED = "not_authorized"
+    MANDATE_NOT_LIVE = "mandate_not_live"
+    RECORD_MISMATCH = "record_mismatch"
     BELOW_MINIMUM = "below_minimum"
     PLACED = "placed"
     REFUSED = "refused"
@@ -88,6 +90,41 @@ def execute(
         "offer_id": record.offer_id,
         "amount_paise": amount,
     }
+
+    if record.intent_id != ledger.intent_id:
+        # A decision record names the mandate it was made against. Executing one
+        # against a different mandate takes the amount and receipt from the first
+        # and the currency and state from the second, which is a confused deputy
+        # with a payment rail attached.
+        return (
+            PaymentAttempt(
+                outcome=Execution.RECORD_MISMATCH,
+                detail=(
+                    f"the decision was made against {record.intent_id} "
+                    f"and this mandate is {ledger.intent_id}"
+                ),
+                **base,
+            ),
+            ledger,
+        )
+
+    if ledger.status is not LedgerStatus.ACTIVE:
+        # The engine refuses a spent mandate, but the engine is not on this path:
+        # a caller holding an older ALLOW record could otherwise execute against a
+        # mandate that has since been spent or expired. Idempotency does not save
+        # it, because a different cart under the same mandate is a different
+        # receipt and therefore a second charge.
+        return (
+            PaymentAttempt(
+                outcome=Execution.MANDATE_NOT_LIVE,
+                detail=(
+                    f"the mandate is {ledger.status.value}; only an ACTIVE mandate can be spent"
+                ),
+                ledger_status=ledger.status,
+                **base,
+            ),
+            ledger,
+        )
 
     if record.decision is not Outcome.ALLOW:
         return (
@@ -150,11 +187,32 @@ def execute(
             ledger,
         )
 
+    order_id = order.get("id") if isinstance(order, dict) else None
+    if not isinstance(order_id, str) or not order_id:
+        # Something came back and it cannot be identified. Calling that PLACED
+        # would mark the mandate spent while leaving no way to find the order,
+        # so the honest state is the same one a timeout produces: it may exist,
+        # go and ask.
+        uncertain = ledger.model_copy(update={"status": LedgerStatus.EXECUTION_UNCERTAIN})
+        return (
+            PaymentAttempt(
+                outcome=Execution.UNCERTAIN,
+                detail=(
+                    "the response carried no usable order id; reconcile before doing "
+                    "anything else, never retry blind"
+                ),
+                reached_the_rail=True,
+                ledger_status=LedgerStatus.EXECUTION_UNCERTAIN,
+                **base,
+            ),
+            uncertain,
+        )
+
     spent = ledger.model_copy(update={"status": LedgerStatus.SPENT})
     return (
         PaymentAttempt(
             outcome=Execution.PLACED,
-            order_id=order.get("id"),
+            order_id=order_id,
             order_status=order.get("status"),
             reached_the_rail=True,
             ledger_status=LedgerStatus.SPENT,
@@ -186,18 +244,27 @@ def reconcile(
         receipt=attempt.receipt,
         notes={"intent_id": attempt.intent_id, "reconciling": "true"},
     )
-    order_id = order.get("id")
-    if not order_id:
+    order_id = order.get("id") if isinstance(order, dict) else None
+    if not isinstance(order_id, str) or not order_id:
+        # Still unidentifiable. The mandate stays uncertain rather than being
+        # quietly resolved in either direction.
         return None, ledger
 
     payments = client.fetch_order_payments(order_id)
-    statuses = [item.get("status", "") for item in payments.get("items", [])]
+    items = payments.get("items", []) if isinstance(payments, dict) else []
+    statuses = [item.get("status", "") for item in items if isinstance(item, dict)]
     settled = any(status in {"captured", "authorized"} for status in statuses)
+
+    # Money is integer paise everywhere, including when it arrives from someone
+    # else. A string, a float or a bool here would be the one place a non-integer
+    # entered the money path from outside the system.
+    reported = order.get("amount_paid", 0)
+    paid = reported if isinstance(reported, int) and not isinstance(reported, bool) else 0
 
     resolved = ReconciledPayment(
         order_id=order_id,
         order_status=order.get("status", ""),
-        amount_paid_paise=order.get("amount_paid", 0),
+        amount_paid_paise=paid,
         payment_statuses=statuses,
         settled=settled,
     )

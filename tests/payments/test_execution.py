@@ -341,3 +341,97 @@ def test_a_test_key_is_accepted() -> None:
 def test_anything_that_is_not_a_test_key_is_refused(key: str) -> None:
     with pytest.raises(LiveKeyRefused):
         HttpRazorpayClient(key, "secret")
+
+
+# --- what the executor is handed, and by whom ------------------------------
+# The audit record comes from inside the system and the response comes from
+# Razorpay. Neither was checked, and three of the four gaps below were paths to
+# a second charge.
+
+
+class OddResponse(FakeRazorpay):
+    """Answers with whatever it was given, however unhelpful."""
+
+    def __init__(self, body: Any) -> None:
+        super().__init__()
+        self.body = body
+
+    def create_order(self, **kwargs: Any) -> dict[str, Any]:
+        self.orders.append(kwargs)
+        return self.body
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{}, {"status": "created"}, {"id": None, "status": "created"}, {"id": ""}, []],
+    ids=["empty", "no id", "null id", "blank id", "not a dict"],
+)
+def test_an_unidentifiable_order_is_uncertain_rather_than_placed(body: Any) -> None:
+    """Calling this PLACED marked the mandate spent with no way to find the order.
+
+    Something went out and something came back. Whether an order exists is
+    unknown, which is exactly the state a timeout produces, so it gets the same
+    answer: go and ask.
+    """
+    ledger, _, record = decide()
+    attempt, after = execute(ledger, record, OddResponse(body), now=NOW)
+    assert attempt.outcome is Execution.UNCERTAIN
+    assert after.status is LedgerStatus.EXECUTION_UNCERTAIN
+    assert attempt.order_id is None
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        LedgerStatus.SPENT,
+        LedgerStatus.EXPIRED,
+        LedgerStatus.EXECUTION_UNCERTAIN,
+        LedgerStatus.AWAITING_CONFIRMATION,
+    ],
+    ids=lambda s: s.value,
+)
+def test_a_mandate_that_is_not_live_cannot_be_spent(status: LedgerStatus) -> None:
+    """A path to a second charge, and the engine is not on it.
+
+    A caller holding an older ALLOW record could execute against a mandate that
+    has since been spent. Idempotency does not save it: a different cart under
+    the same mandate is a different receipt and therefore a different order.
+    """
+    ledger, _, record = decide()
+    stale = ledger.model_copy(update={"status": status})
+    attempt, after = execute(stale, record, RefusingClient(), now=NOW)
+    assert attempt.outcome is Execution.MANDATE_NOT_LIVE
+    assert attempt.reached_the_rail is False
+    assert after.status is status
+
+
+def test_a_decision_from_one_mandate_cannot_be_executed_against_another() -> None:
+    """Confused deputy with a payment rail attached.
+
+    The amount and receipt would come from the first mandate and the currency
+    and state from the second.
+    """
+    ledger, _, record = decide()
+    someone_else = ledger.model_copy(update={"intent_id": "int_someone_else"})
+    attempt, _ = execute(someone_else, record, RefusingClient(), now=NOW)
+    assert attempt.outcome is Execution.RECORD_MISMATCH
+    assert attempt.reached_the_rail is False
+
+
+def test_a_nonsense_amount_paid_does_not_enter_the_money_path() -> None:
+    class OddPayments(FakeRazorpay):
+        def fetch_order_payments(self, order_id: str) -> dict[str, Any]:
+            return {"items": [{"status": "captured"}, "not a dict"]}
+
+        def create_order(self, **kwargs: Any) -> dict[str, Any]:
+            order = super().create_order(**kwargs)
+            return {**order, "amount_paid": "lots"}
+
+    ledger, _, record = decide()
+    attempt, uncertain = execute(
+        ledger, record, FakeRazorpay(fail_with=PaymentTimeout("no answer")), now=NOW
+    )
+    resolved, _ = reconcile(attempt, uncertain, OddPayments())
+    assert resolved.amount_paid_paise == 0
+    assert isinstance(resolved.amount_paid_paise, int)
+    assert resolved.payment_statuses == ["captured"]
