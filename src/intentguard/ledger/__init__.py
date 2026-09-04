@@ -1,5 +1,6 @@
 """Extraction, confidence, and the mandate that comes out of them."""
 
+from .bedrock_extractor import BedrockExtractor
 from .build import LedgerProposal, build_ledger, confirm
 from .claude_extractor import MODEL, SYSTEM_PROMPT, ClaudeExtractor
 from .confidence import DEFAULT_THRESHOLD, score_extraction, vague_terms_in
@@ -11,6 +12,7 @@ __all__ = [
     "FORBIDDEN_FIELD_NAMES",
     "MODEL",
     "SYSTEM_PROMPT",
+    "BedrockExtractor",
     "ClaudeExtractor",
     "ExtractedIntent",
     "Extractor",

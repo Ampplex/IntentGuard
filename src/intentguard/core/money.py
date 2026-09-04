@@ -21,6 +21,10 @@ PAISE_PER_RUPEE = 100
 MAX_DECIMAL_PLACES = 2
 
 _CURRENCY_PREFIXES = ("₹", "INR", "RS.", "RS")
+# A model writing out an amount says "5,000 rupees", and refusing that would
+# discard a perfectly clear figure over a word. Stripped only from the end,
+# and only these words: anything else still fails rather than being guessed at.
+_CURRENCY_SUFFIXES = ("RUPEES", "RUPEE", "INR", "RS.", "RS", "PAISE")
 
 # Ungrouped digits, or digits grouped in twos and threes so that both Indian
 # (12,99,000) and Western (1,299,000) separators parse. A stray or trailing
@@ -64,6 +68,12 @@ def parse_rupees(text: str) -> int:
     for prefix in _CURRENCY_PREFIXES:
         if upper.startswith(prefix):
             cleaned = cleaned[len(prefix) :].lstrip()
+            break
+
+    upper = cleaned.upper()
+    for suffix in _CURRENCY_SUFFIXES:
+        if upper.endswith(suffix):
+            cleaned = cleaned[: len(cleaned) - len(suffix)].rstrip()
             break
 
     if not cleaned:
