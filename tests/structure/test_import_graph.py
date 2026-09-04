@@ -346,3 +346,48 @@ def test_semantic_never_emits_a_blocking_outcome() -> None:
 
 def test_the_semantic_walker_found_files() -> None:
     assert _semantic_files()
+
+
+def _payment_files():
+    return sorted((SRC / "payments").rglob("*.py"))
+
+
+@pytest.mark.parametrize("path", _payment_files(), ids=lambda p: p.name)
+def test_payments_does_not_decide_anything(path: Path) -> None:
+    """The rail executes an authorization; it does not grant one.
+
+    A payments module that could call the engine could re-decide a case the gate
+    already refused, at the exact point where nothing is watching any more.
+    """
+    forbidden = {"policy", "semantic", "merchant", "buyer", "metrics"}
+    assert not sibling_packages_reached(path) & forbidden, path.name
+
+
+def test_no_live_razorpay_key_appears_anywhere_in_the_repository() -> None:
+    """Test mode only, checked against the tree rather than trusted.
+
+    A key committed by accident is the one mistake in this project that costs
+    real money, and it is invisible in a diff once it is a few commits back.
+    """
+    # Assembled rather than written out, or this file matches its own search and
+    # the check reports itself forever. A scanner that has to exclude a file is a
+    # scanner with a hole exactly the shape of that file.
+    needle = "rzp_" + "live_"
+
+    root = SRC.parent.parent
+    skip = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache", ".hypothesis"}
+    offenders = []
+    for path in root.rglob("*"):
+        if not path.is_file() or set(path.parts) & skip:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if needle in text:
+            offenders.append(str(path.relative_to(root)))
+    assert not offenders, f"a live Razorpay key appears in: {offenders}"
+
+
+def test_the_payments_walker_found_files() -> None:
+    assert _payment_files()

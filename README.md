@@ -34,6 +34,13 @@ limitation, not a solved problem.
 **A mandate is single-use.** One ALLOW consumes it and the ledger moves to SPENT. Multi-order
 fulfilment against a single mandate is future work.
 
+**Test mode only, enforced rather than intended.** A Razorpay key that does not
+begin with `rzp_test_` is refused when the client is constructed, and a test
+scans the whole repository for a committed live key. Endpoints and field names
+were read from Razorpay's live documentation, not recalled; no idempotency
+header is sent because none is documented, and idempotency rests on `receipt`,
+which Razorpay documents as serving that purpose.
+
 **Fraud detection is out of scope.** An implausibly low price on an identical item is recorded
 as drift and never acted on. That is Track 02's problem.
 
@@ -47,6 +54,7 @@ src/intentguard/
   merchant/   untrusted: catalog, bounded view, quoting, hostile modes.
   buyer/      the user's agent: negotiation, bounded and always terminating.
   semantic/   substitution and drift. Advisory to an escalation, never a block.
+  payments/   Razorpay adapter, idempotency, the uncertain-execution path.
   gate/       orchestration, the untrusted wire boundary, timing, audit write.
   audit/      the tamper-evident decision trail.
   metrics/    measurement. Cannot import policy/, does no file I/O.
@@ -60,6 +68,7 @@ tests/
   merchant/   the bounded-view gate, hostile quotes over the wire
   buyer/      termination under adversarial merchants
   semantic/   substitution calibration, drift weights, mid-negotiation swaps
+  payments/   no call on a block, the timeout path, test-mode enforcement
   gate/       decision assembly, the boundary, receipts
   audit/      chain integrity and tamper detection
   metrics/    checked against hand-computed answers
@@ -81,7 +90,7 @@ uv pip install -e ".[dev]"
 
 ## Status
 
-Stages 1 to 7 of 12 complete. See the build order table in CLAUDE.md.
+Stages 1 to 8 of 12 complete. See the build order table in CLAUDE.md.
 
 | Stage | Gate | State |
 |---|---|---|
@@ -92,6 +101,7 @@ Stages 1 to 7 of 12 complete. See the build order table in CLAUDE.md.
 | 5. `merchant/` and bounded view | No ceiling in the serialised merchant view | passing |
 | 6. `buyer/` and negotiation | Terminates, always | passing |
 | 7. `semantic/` substitution and drift | Substitution cases classified correctly | passing |
+| 8. `payments/` and idempotency | No call on BLOCK; timeout path tested | passing |
 
 Audit and metrics are built rather than deferred, because the track's bar asks
 to see an audit trail and a graceful failure, and both sat near the end of the
