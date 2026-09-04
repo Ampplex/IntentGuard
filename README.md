@@ -37,6 +37,42 @@ fulfilment against a single mandate is future work.
 **Fraud detection is out of scope.** An implausibly low price on an identical item is recorded
 as drift and never acted on. That is Track 02's problem.
 
+## Layout
+
+```
+src/intentguard/
+  core/            schemas, money helpers, the frozen violation codes. No logic.
+  policy/          the deterministic engine. Imports core/ and nothing else.
+data/gold/
+  author.py        hand-authored cases. Cannot import intentguard, and a test enforces it.
+  cases.json       the 100 labelled cases
+  REVIEW.md        the same cases rendered for review by eye
+tests/
+  core/            schemas, money, hashing, the no-float invariant
+  policy/          one test per violation code the engine can raise
+  gold/            the gold set is well formed and internally consistent
+  structure/       the import graph and clock gates
+```
+
+## Running it
+
+```
+uv venv --python 3.12 .venv
+uv pip install -e ".[dev]"
+.venv/bin/python -m pytest          # 597 tests
+.venv/bin/python -m ruff check .
+.venv/bin/python data/gold/author.py    # regenerate the gold artifacts
+```
+
 ## Status
 
-Stage 1 of 12. See the build order table in CLAUDE.md.
+Stages 1 to 3 of 12 complete. See the build order table in CLAUDE.md.
+
+| Stage | Gate | State |
+|---|---|---|
+| 1. `core/` schemas and money | Round-trip tests, no float in the money path | passing |
+| 2. `policy/` engine | Import graph gate, a test per violation code | passing |
+| 3. Gold set, 100 hand-labelled | Exists, labelled without running the engine | passing |
+
+The gold labels are held out. Nothing is tuned against them and they have not
+been scored. Thresholds get derived from the synthetic set at stage 9.

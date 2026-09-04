@@ -87,3 +87,28 @@ def test_fixtures_never_write_money_as_a_decimal(path: Path) -> None:
     source = path.read_text(encoding="utf-8")
     bad = re.findall(r"(?:_paise|from_rupees)\s*[=(]\s*-?\d+\.\d", source)
     assert not bad, f"{path.name} writes money as a decimal: {bad}"
+
+
+def test_the_gold_author_writes_no_decimal_money() -> None:
+    """Gold fixtures are money too, and they live outside the tests tree.
+
+    Confidence scores are floats and legitimately so, which is why they are
+    excluded by position rather than the whole file being waved through.
+    """
+    author = CORE_DIR.parent.parent.parent / "data" / "gold" / "author.py"
+    tree = ast.parse(author.read_text(encoding="utf-8"))
+
+    permitted = {
+        id(node)
+        for keyword in ast.walk(tree)
+        if isinstance(keyword, ast.keyword) and keyword.arg == "confidence"
+        for node in ast.walk(keyword)
+    }
+    offenders = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, float)
+        and id(node) not in permitted
+    ]
+    assert not offenders, f"money written as a decimal in the gold author: {offenders}"
