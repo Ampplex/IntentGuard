@@ -9,12 +9,15 @@ from .similarity import (
     tokens,
 )
 from .substitution import (
+    DEFAULT_CONFUSION_THRESHOLD,
     DEFAULT_SUBSTITUTION_THRESHOLD,
     assess_substitution,
+    names_another_product,
     product_match_score,
 )
 
 __all__ = [
+    "DEFAULT_CONFUSION_THRESHOLD",
     "DEFAULT_SUBSTITUTION_THRESHOLD",
     "MATCH_THRESHOLD",
     "WEIGHTS",
@@ -23,6 +26,7 @@ __all__ = [
     "Similarity",
     "assess_substitution",
     "bigrams",
+    "names_another_product",
     "product_match_score",
     "score_drift",
     "tokens",

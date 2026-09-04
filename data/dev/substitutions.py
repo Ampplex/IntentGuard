@@ -21,9 +21,30 @@ from pathlib import Path
 PAIRS: list[dict] = []
 
 
-def pair(negotiated: str, delivered: str, verdict: str, why: str) -> None:
+def pair(
+    negotiated: str,
+    delivered: str,
+    verdict: str,
+    why: str,
+    alternatives: tuple[str, ...] = (),
+) -> None:
+    """One comparison.
+
+    `alternatives` are other products the merchant is known to sell. They exist
+    because coverage alone cannot see a description that still names the agreed
+    product and also names a second one. Knowing what else is on the shelf is
+    what makes that visible.
+    """
     assert verdict in {"SAME", "DIFFERENT"}
-    PAIRS.append({"negotiated": negotiated, "delivered": delivered, "verdict": verdict, "why": why})
+    PAIRS.append(
+        {
+            "negotiated": negotiated,
+            "delivered": delivered,
+            "verdict": verdict,
+            "why": why,
+            "alternatives": list(alternatives),
+        }
+    )
 
 
 # --- the same product, described differently -------------------------------
@@ -63,6 +84,68 @@ pair("boAt Airdopes 141", "boAt Rockerz 255", "DIFFERENT", "different line from 
 pair("Laptop Backpack", "Leather Messenger Bag", "DIFFERENT", "different article")
 pair("Wooden Chess Set", "Magnetic Travel Chess", "DIFFERENT", "different object")
 pair("Vitamin C Serum", "Retinol Serum", "DIFFERENT", "different active ingredient")
+
+# --- descriptions that name two products -----------------------------------
+# The evasion coverage cannot see on its own: keep the agreed name, append a
+# different one. Everything agreed really is still present, so coverage is one.
+# What gives it away is that another thing on the shelf is also in the text.
+
+SHELF = (
+    "Nike Revolution 7",
+    "Asics Gel-Kayano 30",
+    "boAt Rockerz 255",
+    "Leather Chelsea Boots",
+    "ThinkPad T480",
+)
+
+pair(
+    "Asics Gel-Contend 9",
+    "Asics Gel-Contend 9 replacement, Nike Revolution",
+    "DIFFERENT",
+    "keeps the agreed name and names a second product",
+    SHELF,
+)
+pair(
+    "Asics Gel-Contend 9",
+    "Asics Gel-Contend 9 or Asics Gel-Kayano",
+    "DIFFERENT",
+    "offers a choice the buyer never agreed to",
+    SHELF,
+)
+pair(
+    "boAt Airdopes 141",
+    "boAt Airdopes 141 / boAt Rockerz",
+    "DIFFERENT",
+    "two lines in one listing",
+    SHELF,
+)
+
+# The same mechanism must not fire on honest elaboration while a full shelf of
+# other products is known. These are the cases a naive rule would ruin.
+pair(
+    "boAt Airdopes 141",
+    "boAt Airdopes 141 Bluetooth earbuds",
+    "SAME",
+    "category words, with other products known",
+    SHELF,
+)
+pair(
+    "Asics Gel-Contend 9",
+    "Asics Gel-Contend 9, mesh upper",
+    "SAME",
+    "material described, with other products known",
+    SHELF,
+)
+pair(
+    "Lenovo IdeaPad Slim 3",
+    "Lenovo IdeaPad Slim 3 laptop, aluminium chassis",
+    "SAME",
+    "material described, with other products known. An earlier version of this case "
+    "said 8GB, which is a memory configuration and therefore a different SKU by the "
+    "same reasoning that makes 1.5L Pro a different kettle. The example was wrong, "
+    "not the rule",
+    SHELF,
+)
 
 if __name__ == "__main__":
     out = Path(__file__).parent / "substitutions.json"

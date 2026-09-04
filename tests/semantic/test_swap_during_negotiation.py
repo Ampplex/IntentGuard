@@ -119,3 +119,47 @@ def test_the_semantic_phase_is_timed_separately() -> None:
     )
     assert decision.latency_ms.semantic_ms > 0
     assert decision.latency_ms.total_ms >= decision.latency_ms.arithmetic_ms
+
+
+def test_the_shelf_reaches_the_check_through_the_gate() -> None:
+    """Wiring, asserted rather than assumed.
+
+    The parameter existed on both gate functions and was never passed to the
+    check underneath, so the evasion still passed end to end while every unit
+    test of the check itself was green. A signature is not a connection.
+    """
+    from intentguard.merchant import CATALOG
+
+    payload = {
+        "offer_id": "off_evasion",
+        "product": {
+            "product_id": "sku_x",
+            "title": "Asics Gel-Contend 9 replacement, Nike Revolution",
+            "category": "footwear",
+            "condition": "new",
+            "brand": None,
+            "colour": None,
+        },
+        "quantity": 1,
+        "currency": "INR",
+        "line_items": [{"label": "shoe", "amount_paise": from_rupees(4100), "kind": "product"}],
+        "total_paise": from_rupees(4100),
+        "recurring": [],
+        "emi": None,
+        "raw_description": "",
+    }
+    ledger = mandate()
+
+    without_shelf, _ = receive(ledger, payload, now=NOW, negotiated_product="Asics Gel-Contend 9")
+    assert without_shelf.decision is Outcome.ALLOW
+
+    with_shelf, _ = receive(
+        ledger,
+        payload,
+        now=NOW,
+        negotiated_product="Asics Gel-Contend 9",
+        known_products=[item.title for item in CATALOG],
+    )
+    assert with_shelf.decision is Outcome.ESCALATE
+    assert ViolationCode.PRODUCT_SUBSTITUTION in codes(with_shelf)
+    assert "Nike Revolution 7" in with_shelf.violations[0].explanation

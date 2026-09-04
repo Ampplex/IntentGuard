@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Iterable
 from datetime import datetime
 
 from ..audit.records import AuditRecord, ComplianceReceipt
@@ -50,6 +51,7 @@ def run_gate(
     log: AuditLog | None = None,
     human_confirmed: bool = False,
     negotiated_product: str | None = None,
+    known_products: Iterable[str] = (),
 ) -> tuple[Decision, AuditRecord]:
     """Decide, time, record. The audit record is written before anything else acts.
 
@@ -61,6 +63,10 @@ def run_gate(
     negotiated_product is what the merchant was offering when the negotiation
     opened. A swap partway through is invisible to any check that only sees the
     final cart, which is the whole reason it is passed in.
+
+    known_products is the rest of the merchant's shelf. It is passed in rather
+    than imported so that the trusted side keeps no dependency on the untrusted
+    one, and it is what lets a description naming two products be noticed.
     """
     started = time.perf_counter()
 
@@ -71,7 +77,9 @@ def run_gate(
     semantic_started = time.perf_counter()
     drift = score_drift(ledger, offer)
     semantic_violations = (
-        assess_substitution(negotiated_product, offer.product.title) if negotiated_product else []
+        assess_substitution(negotiated_product, offer.product.title, alternatives=known_products)
+        if negotiated_product
+        else []
     )
     semantic_ms = (time.perf_counter() - semantic_started) * _MS
 

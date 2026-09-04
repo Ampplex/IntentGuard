@@ -3,144 +3,246 @@
     "negotiated": "Asics Gel-Contend 9",
     "delivered": "Asics Gel Contend 9",
     "verdict": "SAME",
-    "why": "hyphen only"
+    "why": "hyphen only",
+    "alternatives": []
   },
   {
     "negotiated": "Asics Gel-Contend 9",
     "delivered": "ASICS GEL-CONTEND 9",
     "verdict": "SAME",
-    "why": "case only"
+    "why": "case only",
+    "alternatives": []
   },
   {
     "negotiated": "Asics Gel-Contend 9",
     "delivered": "Asics Gel-Contend 9 (2024)",
     "verdict": "SAME",
-    "why": "year suffix on the listing"
+    "why": "year suffix on the listing",
+    "alternatives": []
   },
   {
     "negotiated": "Lenovo IdeaPad Slim 3",
     "delivered": "Lenovo IdeaPad Slim 3 laptop",
     "verdict": "SAME",
-    "why": "retailer adds a noun"
+    "why": "retailer adds a noun",
+    "alternatives": []
   },
   {
     "negotiated": "Electric Kettle",
     "delivered": "Electric Kettle, stainless steel",
     "verdict": "SAME",
-    "why": "material described"
+    "why": "material described",
+    "alternatives": []
   },
   {
     "negotiated": "boAt Airdopes 141",
     "delivered": "boAt Airdopes 141 Bluetooth earbuds",
     "verdict": "SAME",
-    "why": "category words added"
+    "why": "category words added",
+    "alternatives": []
   },
   {
     "negotiated": "Cotton T-Shirt",
     "delivered": "Cotton T Shirt",
     "verdict": "SAME",
-    "why": "spacing only"
+    "why": "spacing only",
+    "alternatives": []
   },
   {
     "negotiated": "Midnight's Children",
     "delivered": "Midnight's Children by Salman Rushdie",
     "verdict": "SAME",
-    "why": "author appended"
+    "why": "author appended",
+    "alternatives": []
   },
   {
     "negotiated": "Cork Yoga Mat",
     "delivered": "Yoga Mat, Cork",
     "verdict": "SAME",
-    "why": "word order"
+    "why": "word order",
+    "alternatives": []
   },
   {
     "negotiated": "Vitamin C Serum",
     "delivered": "Vitamin C Face Serum",
     "verdict": "SAME",
-    "why": "one clarifying word"
+    "why": "one clarifying word",
+    "alternatives": []
   },
   {
     "negotiated": "Laptop Backpack",
     "delivered": "Laptop Backpack 25L",
     "verdict": "SAME",
-    "why": "capacity on the same bag"
+    "why": "capacity on the same bag",
+    "alternatives": []
   },
   {
     "negotiated": "Wooden Chess Set",
     "delivered": "Wooden Chess Set - Handcrafted",
     "verdict": "SAME",
-    "why": "marketing suffix"
+    "why": "marketing suffix",
+    "alternatives": []
   },
   {
     "negotiated": "Asics Gel-Contend 9",
     "delivered": "Nike Revolution 7",
     "verdict": "DIFFERENT",
-    "why": "different brand and model"
+    "why": "different brand and model",
+    "alternatives": []
   },
   {
     "negotiated": "Lenovo IdeaPad Slim 3",
     "delivered": "HP 15s",
     "verdict": "DIFFERENT",
-    "why": "different make entirely"
+    "why": "different make entirely",
+    "alternatives": []
   },
   {
     "negotiated": "Midnight's Children",
     "delivered": "The Satanic Verses",
     "verdict": "DIFFERENT",
-    "why": "same author, different book"
+    "why": "same author, different book",
+    "alternatives": []
   },
   {
     "negotiated": "Sony WH-1000XM5",
     "delivered": "Sony WH-1000XM4",
     "verdict": "DIFFERENT",
-    "why": "one character apart and a different generation; the hard case for any lexical scorer"
+    "why": "one character apart and a different generation; the hard case for any lexical scorer",
+    "alternatives": []
   },
   {
     "negotiated": "Electric Kettle",
     "delivered": "Electric Kettle 1.5L Pro",
     "verdict": "DIFFERENT",
-    "why": "a different model in the same line, which is a different SKU and a different price"
+    "why": "a different model in the same line, which is a different SKU and a different price",
+    "alternatives": []
   },
   {
     "negotiated": "Asics Gel-Contend 9",
     "delivered": "Asics Gel-Kayano 30",
     "verdict": "DIFFERENT",
-    "why": "same brand, different shoe"
+    "why": "same brand, different shoe",
+    "alternatives": []
   },
   {
     "negotiated": "Cork Yoga Mat",
     "delivered": "PVC Yoga Mat",
     "verdict": "DIFFERENT",
-    "why": "different material is a different product"
+    "why": "different material is a different product",
+    "alternatives": []
   },
   {
     "negotiated": "Cotton T-Shirt",
     "delivered": "Polyester T-Shirt",
     "verdict": "DIFFERENT",
-    "why": "different fabric"
+    "why": "different fabric",
+    "alternatives": []
   },
   {
     "negotiated": "boAt Airdopes 141",
     "delivered": "boAt Rockerz 255",
     "verdict": "DIFFERENT",
-    "why": "different line from one brand"
+    "why": "different line from one brand",
+    "alternatives": []
   },
   {
     "negotiated": "Laptop Backpack",
     "delivered": "Leather Messenger Bag",
     "verdict": "DIFFERENT",
-    "why": "different article"
+    "why": "different article",
+    "alternatives": []
   },
   {
     "negotiated": "Wooden Chess Set",
     "delivered": "Magnetic Travel Chess",
     "verdict": "DIFFERENT",
-    "why": "different object"
+    "why": "different object",
+    "alternatives": []
   },
   {
     "negotiated": "Vitamin C Serum",
     "delivered": "Retinol Serum",
     "verdict": "DIFFERENT",
-    "why": "different active ingredient"
+    "why": "different active ingredient",
+    "alternatives": []
+  },
+  {
+    "negotiated": "Asics Gel-Contend 9",
+    "delivered": "Asics Gel-Contend 9 replacement, Nike Revolution",
+    "verdict": "DIFFERENT",
+    "why": "keeps the agreed name and names a second product",
+    "alternatives": [
+      "Nike Revolution 7",
+      "Asics Gel-Kayano 30",
+      "boAt Rockerz 255",
+      "Leather Chelsea Boots",
+      "ThinkPad T480"
+    ]
+  },
+  {
+    "negotiated": "Asics Gel-Contend 9",
+    "delivered": "Asics Gel-Contend 9 or Asics Gel-Kayano",
+    "verdict": "DIFFERENT",
+    "why": "offers a choice the buyer never agreed to",
+    "alternatives": [
+      "Nike Revolution 7",
+      "Asics Gel-Kayano 30",
+      "boAt Rockerz 255",
+      "Leather Chelsea Boots",
+      "ThinkPad T480"
+    ]
+  },
+  {
+    "negotiated": "boAt Airdopes 141",
+    "delivered": "boAt Airdopes 141 / boAt Rockerz",
+    "verdict": "DIFFERENT",
+    "why": "two lines in one listing",
+    "alternatives": [
+      "Nike Revolution 7",
+      "Asics Gel-Kayano 30",
+      "boAt Rockerz 255",
+      "Leather Chelsea Boots",
+      "ThinkPad T480"
+    ]
+  },
+  {
+    "negotiated": "boAt Airdopes 141",
+    "delivered": "boAt Airdopes 141 Bluetooth earbuds",
+    "verdict": "SAME",
+    "why": "category words, with other products known",
+    "alternatives": [
+      "Nike Revolution 7",
+      "Asics Gel-Kayano 30",
+      "boAt Rockerz 255",
+      "Leather Chelsea Boots",
+      "ThinkPad T480"
+    ]
+  },
+  {
+    "negotiated": "Asics Gel-Contend 9",
+    "delivered": "Asics Gel-Contend 9, mesh upper",
+    "verdict": "SAME",
+    "why": "material described, with other products known",
+    "alternatives": [
+      "Nike Revolution 7",
+      "Asics Gel-Kayano 30",
+      "boAt Rockerz 255",
+      "Leather Chelsea Boots",
+      "ThinkPad T480"
+    ]
+  },
+  {
+    "negotiated": "Lenovo IdeaPad Slim 3",
+    "delivered": "Lenovo IdeaPad Slim 3 laptop, aluminium chassis",
+    "verdict": "SAME",
+    "why": "material described, with other products known. An earlier version of this case said 8GB, which is a memory configuration and therefore a different SKU by the same reasoning that makes 1.5L Pro a different kettle. The example was wrong, not the rule",
+    "alternatives": [
+      "Nike Revolution 7",
+      "Asics Gel-Kayano 30",
+      "boAt Rockerz 255",
+      "Leather Chelsea Boots",
+      "ThinkPad T480"
+    ]
   }
 ]

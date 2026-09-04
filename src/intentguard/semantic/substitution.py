@@ -23,6 +23,8 @@ escalating rather than deciding.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from ..core.decision import Violation
 from ..core.enums import Outcome
 from ..core.violations import ViolationCode, explain
@@ -36,6 +38,11 @@ DEFAULT_SUBSTITUTION_THRESHOLD = 0.9
 # An added token carrying a digit is a model number, a capacity or a tier, and
 # those name a different thing to buy. An added word without one is description.
 ADDED_IDENTIFIER_PENALTY = 0.5
+
+# How much of another product's distinguishing name has to appear in the
+# description before it counts as naming that product too. Calibrated against
+# the shelf-aware pairs in data/dev/substitutions.json.
+DEFAULT_CONFUSION_THRESHOLD = 0.5
 
 
 def _has_digit(token: str) -> bool:
@@ -74,12 +81,53 @@ def product_match_score(negotiated: str, delivered: str) -> float:
     return coverage
 
 
+def names_another_product(
+    negotiated: str,
+    delivered: str,
+    alternatives: Iterable[str],
+    *,
+    threshold: float = DEFAULT_CONFUSION_THRESHOLD,
+) -> str | None:
+    """Does the description also name something else on the merchant's shelf?
+
+    This closes the evasion coverage cannot see. A merchant that keeps the
+    agreed name and appends a different product's -- "Asics Gel-Contend 9
+    replacement, Nike Revolution" -- has a description in which everything
+    agreed is still present, so coverage reads one and nothing looks wrong.
+
+    What gives it away is knowing what else the merchant sells. The test is not
+    how much of the alternative appears, which would fire on any two products
+    sharing a brand, but how much of what makes it *distinct from the agreed
+    product* appears. "Asics Gel-Kayano 30" shares "asics" and "gel" with
+    "Asics Gel-Contend 9", and those shared words say nothing; "kayano" and "30"
+    say everything. A description containing them is describing a Kayano.
+
+    Returns the alternative it found, or None. Escalates, like everything else
+    here, because a name appearing in a description is evidence and not proof.
+    """
+    agreed = tokens(negotiated)
+    arrived = tokens(delivered)
+    if not arrived:
+        return None
+
+    for alternative in alternatives:
+        distinctive = tokens(alternative) - agreed
+        if not distinctive:
+            # Indistinguishable from what was agreed, so its presence says nothing.
+            continue
+        if len(distinctive & arrived) / len(distinctive) >= threshold:
+            return alternative
+    return None
+
+
 def assess_substitution(
     negotiated: str,
     delivered: str,
     *,
     similarity: Similarity | None = None,
     threshold: float = DEFAULT_SUBSTITUTION_THRESHOLD,
+    alternatives: Iterable[str] = (),
+    confusion_threshold: float = DEFAULT_CONFUSION_THRESHOLD,
 ) -> list[Violation]:
     """Compare what was being negotiated with what arrived.
 
@@ -96,9 +144,17 @@ def assess_substitution(
         if similarity is not None
         else product_match_score(negotiated, delivered)
     )
-    if score >= threshold:
+    confused_with = names_another_product(
+        negotiated, delivered, alternatives, threshold=confusion_threshold
+    )
+    if score >= threshold and confused_with is None:
         return []
 
+    observed = (
+        f"{delivered} (which also names {confused_with})"
+        if confused_with is not None
+        else delivered
+    )
     return [
         Violation(
             code=ViolationCode.PRODUCT_SUBSTITUTION,
@@ -107,10 +163,10 @@ def assess_substitution(
             # is known, and a similarity score is never known well enough.
             outcome=Outcome.ESCALATE,
             explanation=explain(
-                ViolationCode.PRODUCT_SUBSTITUTION, expected=negotiated, observed=delivered
+                ViolationCode.PRODUCT_SUBSTITUTION, expected=negotiated, observed=observed
             ),
             field="product",
             expected=negotiated,
-            observed=delivered,
+            observed=observed,
         )
     ]

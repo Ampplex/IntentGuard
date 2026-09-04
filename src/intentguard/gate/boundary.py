@@ -21,6 +21,7 @@ audit trail; "we refused this exact document, here is its hash" is.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from datetime import datetime
 
 from pydantic import ValidationError
@@ -90,6 +91,7 @@ def receive(
     log: AuditLog | None = None,
     human_confirmed: bool = False,
     negotiated_product: str | None = None,
+    known_products: Iterable[str] = (),
 ) -> tuple[Decision, AuditRecord]:
     """Take a merchant's document and answer it. The entry point for the wire."""
     try:
@@ -103,6 +105,7 @@ def receive(
         log=log,
         human_confirmed=human_confirmed,
         negotiated_product=negotiated_product,
+        known_products=known_products,
     )
 
 

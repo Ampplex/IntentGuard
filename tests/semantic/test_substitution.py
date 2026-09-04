@@ -25,14 +25,31 @@ PAIRS = json.loads(
         encoding="utf-8"
     )
 )
+
+
+def _flagged(case: dict) -> bool:
+    """What the detector actually concludes, not what one component scores.
+
+    Coverage is half of it. The other half is whether the description names
+    something else on the merchant's shelf, and a calibration measuring only the
+    first half reports the evasion pairs as missed swaps when they are caught.
+    """
+    return bool(
+        assess_substitution(
+            case["negotiated"], case["delivered"], alternatives=case["alternatives"]
+        )
+    )
+
+
 SCORED = [
     (
-        p["negotiated"],
-        p["delivered"],
-        p["verdict"],
-        product_match_score(p["negotiated"], p["delivered"]),
+        case["negotiated"],
+        case["delivered"],
+        case["verdict"],
+        product_match_score(case["negotiated"], case["delivered"]),
+        _flagged(case),
     )
-    for p in PAIRS
+    for case in PAIRS
 ]
 
 # Two pairs the measure cannot place, and both are genuinely arguable: a listing
@@ -53,7 +70,7 @@ def test_substitution_never_blocks() -> None:
     The deterministic half of substitution -- an exact mismatch against a pinned
     product_ref -- does block, and lives in policy/. This half cannot.
     """
-    for negotiated, delivered, _, _ in SCORED:
+    for negotiated, delivered, *_ in SCORED:
         for violation in assess_substitution(negotiated, delivered):
             assert violation.outcome is Outcome.ESCALATE
             assert violation.outcome is not Outcome.BLOCK
@@ -71,23 +88,17 @@ def test_the_code_is_named_even_though_the_outcome_is_downgraded() -> None:
 
 def test_no_swap_is_missed() -> None:
     """The direction that costs money. A missed swap is a different product bought."""
-    missed = [
-        (n, d, s)
-        for n, d, v, s in SCORED
-        if v == "DIFFERENT" and s >= DEFAULT_SUBSTITUTION_THRESHOLD
-    ]
+    missed = [(n, d) for n, d, v, _, flagged in SCORED if v == "DIFFERENT" and not flagged]
     assert missed == [], f"substitutions that would have passed: {missed}"
 
 
 def test_over_caution_is_bounded_and_named() -> None:
-    over = {(n, d) for n, d, v, s in SCORED if v == "SAME" and s < DEFAULT_SUBSTITUTION_THRESHOLD}
+    over = {(n, d) for n, d, v, _, flagged in SCORED if v == "SAME" and flagged}
     assert over == KNOWN_OVER_CAUTIOUS, f"unexplained escalations: {over - KNOWN_OVER_CAUTIOUS}"
 
 
 def test_accuracy_on_the_calibration_set() -> None:
-    correct = sum(
-        1 for _, _, v, s in SCORED if (s >= DEFAULT_SUBSTITUTION_THRESHOLD) == (v == "SAME")
-    )
+    correct = sum(1 for _, _, v, _, flagged in SCORED if flagged == (v == "DIFFERENT"))
     assert correct / len(SCORED) >= 0.90
 
 
@@ -178,18 +189,55 @@ def test_padding_with_the_agreed_name_does_not_hide_a_swap() -> None:
         assert assess_substitution("Asics Gel-Contend 9", delivered), delivered
 
 
-def test_a_known_evasion_that_this_measure_cannot_see() -> None:
-    """Pinned so it stays visible rather than being discovered by a reviewer.
+def test_the_shelf_closes_the_evasion_coverage_cannot_see() -> None:
+    """This was a pinned known miss, and it is now caught.
 
     Appending another product's name without any digit keeps coverage at one,
-    because everything agreed really is still in the text. Telling that apart
-    from honest elaboration needs to know which added words name a product,
-    which word overlap does not. The embedding path is the intended answer and
-    is untested against a real model.
-
-    If this ever starts failing, the measure improved and the test should be
-    turned into a positive one.
+    because everything agreed really is still in the text. Coverage alone cannot
+    tell that the description now also describes something else. Knowing what
+    else the merchant sells can.
     """
     evasion = "Asics Gel-Contend 9 replacement, Nike Revolution"
     assert product_match_score("Asics Gel-Contend 9", evasion) == 1.0
-    assert assess_substitution("Asics Gel-Contend 9", evasion) == []
+    assert assess_substitution("Asics Gel-Contend 9", evasion) == [], "still invisible alone"
+
+    caught = assess_substitution("Asics Gel-Contend 9", evasion, alternatives=["Nike Revolution 7"])
+    assert caught
+    assert "Nike Revolution 7" in caught[0].observed
+    assert caught[0].outcome is Outcome.ESCALATE
+
+
+def test_shared_brand_words_do_not_make_every_offer_suspicious() -> None:
+    """The test is the alternative's distinctive words, not its whole name.
+
+    "Asics Gel-Kayano 30" shares "asics" and "gel" with "Asics Gel-Contend 9",
+    and those shared words say nothing about which shoe arrived. Comparing whole
+    names would fire on every product from the same brand.
+    """
+    assert (
+        assess_substitution(
+            "Asics Gel-Contend 9",
+            "Asics Gel-Contend 9, mesh upper",
+            alternatives=["Asics Gel-Kayano 30", "Nike Revolution 7"],
+        )
+        == []
+    )
+
+
+def test_an_alternative_identical_to_the_agreed_product_is_ignored() -> None:
+    """It has no distinctive words, so its presence cannot mean anything."""
+    assert (
+        assess_substitution(
+            "Asics Gel-Contend 9",
+            "Asics Gel-Contend 9",
+            alternatives=["Asics Gel-Contend 9"],
+        )
+        == []
+    )
+
+
+def test_the_alternative_that_was_found_is_named_to_the_user() -> None:
+    caught = assess_substitution(
+        "boAt Airdopes 141", "boAt Airdopes 141 / boAt Rockerz", alternatives=["boAt Rockerz 255"]
+    )
+    assert "boAt Rockerz 255" in caught[0].explanation
