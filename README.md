@@ -55,12 +55,14 @@ src/intentguard/
   buyer/      the user's agent: negotiation, bounded and always terminating.
   semantic/   substitution and drift. Advisory to an escalation, never a block.
   payments/   Razorpay adapter, idempotency, the uncertain-execution path.
+  bench/      generator (imports nothing from intentguard) and harness.
   gate/       orchestration, the untrusted wire boundary, timing, audit write.
   audit/      the tamper-evident decision trail.
   metrics/    measurement. Cannot import policy/, does no file I/O.
 data/
   gold/       100 hand-labelled cases, held out. Cannot import intentguard.
-  dev/        60-case confidence set and 24-pair substitution set. Same import ban.
+  dev/        60-case confidence set and 30-pair substitution set. Same import ban.
+  synthetic/  1,444 generated cases, 20 percent held out by hash.
 tests/
   core/       schemas, money, hashing, the no-float invariant
   policy/     one test per violation code, the threat table, regressions
@@ -69,6 +71,7 @@ tests/
   buyer/      termination under adversarial merchants
   semantic/   substitution calibration, drift weights, mid-negotiation swaps
   payments/   no call on a block, the timeout path, test-mode enforcement
+  bench/      generator independence, holdout stability, injection twins
   gate/       decision assembly, the boundary, receipts
   audit/      chain integrity and tamper detection
   metrics/    checked against hand-computed answers
@@ -86,11 +89,13 @@ uv pip install -e ".[dev]"
 .venv/bin/python data/gold/author.py    # regenerate the gold artifacts
 .venv/bin/python data/dev/author.py     # regenerate the confidence set
 .venv/bin/python data/dev/substitutions.py  # regenerate the substitution set
+PYTHONPATH=src .venv/bin/python -m intentguard.bench.generator   # regenerate the benchmark
+PYTHONPATH=src .venv/bin/python -m intentguard.bench.harness     # report the training slice
 ```
 
 ## Status
 
-Stages 1 to 8 of 12 complete. See the build order table in CLAUDE.md.
+Stages 1 to 9 of 12 complete. See the build order table in CLAUDE.md.
 
 | Stage | Gate | State |
 |---|---|---|
@@ -102,6 +107,7 @@ Stages 1 to 8 of 12 complete. See the build order table in CLAUDE.md.
 | 6. `buyer/` and negotiation | Terminates, always | passing |
 | 7. `semantic/` substitution and drift | Substitution cases classified correctly | passing |
 | 8. `payments/` and idempotency | No call on BLOCK; timeout path tested | passing |
+| 9. `bench/` generator and harness | Generator import test passes; full run reports | passing |
 
 Audit and metrics are built rather than deferred, because the track's bar asks
 to see an audit trail and a graceful failure, and both sat near the end of the
@@ -111,5 +117,25 @@ Extraction runs without an API key: the rule-based extractor is a real fallback,
 not a mock. Set `ANTHROPIC_API_KEY` and install the `llm` extra to use the
 model-backed path, which is wired but untested against a live model.
 
-The gold labels are held out. Nothing is tuned against them and they have not
-been scored. Thresholds get derived from the synthetic set at stage 9.
+## Reading the benchmark honestly
+
+The engine scores 100 percent on the synthetic training slice, including on the
+225 boundary cases that sit exactly on a ceiling, one paisa over it, or at a
+quantity mode's edge. **That number is not evidence that the system is correct.**
+It means the engine and the generator read the specification the same way, which
+is what CLAUDE.md predicts when one repository writes both.
+
+Three mitigations, all structural rather than promised. The generator imports
+nothing from `intentguard` at all, enforced by a test. Twenty percent of the
+synthetic set is held out, assigned by hashing the case id so the split cannot
+drift as the mix changes. And the hand-labelled gold set has never been scored
+and nothing has ever been tuned against it.
+
+Gold and synthetic are always reported separately. There is deliberately no
+function that merges two reports, and a test asserts there is not: they are
+different kinds of claim, and averaging them describes neither.
+
+The injection result is reported as what it currently is. Nothing reads
+`raw_description`, so zero changed decisions across 129 twin pairs is a fact
+about transport, not about a model resisting persuasion. It becomes evidence
+about a model when a model reads that field.
