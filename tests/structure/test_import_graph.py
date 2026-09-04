@@ -268,3 +268,40 @@ def test_no_module_defines_the_confidence_threshold_twice() -> None:
         if literal in line and "=" in line and not line.strip().startswith("#")
     ]
     assert defining == ["violations.py"], f"threshold defined in {defining}"
+
+
+def _buyer_files():
+    return sorted((SRC / "buyer").rglob("*.py"))
+
+
+@pytest.mark.parametrize("path", _buyer_files(), ids=lambda p: p.name)
+def test_negotiation_contains_no_unbounded_loop(path: Path) -> None:
+    """The structural half of "terminates, always".
+
+    A `while` with an exit condition is a promise that the condition is always
+    eventually met, and an adversarial counterparty is exactly the thing that
+    breaks such promises. A `for` over a fixed range is a proof instead: no
+    merchant response can extend it.
+
+    `while True` is refused outright; any other `while` is refused too, because
+    reviewing which ones are safe is the work this test exists to avoid.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    loops = [node for node in ast.walk(tree) if isinstance(node, ast.While)]
+    assert not loops, f"{path.name} uses a while loop in a negotiation path"
+
+
+@pytest.mark.parametrize("path", _buyer_files(), ids=lambda p: p.name)
+def test_the_buyer_does_not_reach_the_engine(path: Path) -> None:
+    """The buyer is the user's agent, and the gate still does not trust it.
+
+    A buyer that could call the engine could decide its own offer was acceptable,
+    and the check that matters would be happening on the wrong side of the
+    boundary.
+    """
+    forbidden = {"policy", "gate", "audit", "payments", "metrics"}
+    assert not sibling_packages_reached(path) & forbidden, path.name
+
+
+def test_the_buyer_walker_found_files() -> None:
+    assert _buyer_files()

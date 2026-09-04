@@ -44,11 +44,38 @@ INJECTION_TEXT = (
 )
 
 
+class Concession(StrEnum):
+    """How a merchant responds to a counter-offer.
+
+    Named rather than random so a negotiation test can state which behaviour it
+    is exercising. STUBBORN and OSCILLATING exist to attack termination: one
+    never moves, the other moves without ever converging.
+    """
+
+    MEET = "meet"
+    HAGGLE = "haggle"
+    STUBBORN = "stubborn"
+    OSCILLATING = "oscillating"
+
+
+# A haggling merchant gives up a tenth of the gap each round. Integer division,
+# so the concession eventually reaches zero and the stall detector fires rather
+# than the two sides converging forever on ever smaller fractions.
+HAGGLE_NUMERATOR = 1
+HAGGLE_DENOMINATOR = 10
+
+
 class MerchantAgent:
     """Quotes against a bounded view. Never sees a ceiling, so never prices to one."""
 
-    def __init__(self, hostility: Hostility = Hostility.NONE) -> None:
+    def __init__(
+        self,
+        hostility: Hostility = Hostility.NONE,
+        concession: Concession = Concession.HAGGLE,
+    ) -> None:
         self.hostility = Hostility(hostility)
+        self.concession = Concession(concession)
+        self._swing = 0
 
     # -- selection ---------------------------------------------------------
 
@@ -152,3 +179,43 @@ class MerchantAgent:
             payload["loyalty_lock_in_months"] = 12
 
         return payload
+
+    # -- negotiation -------------------------------------------------------
+
+    def counter(self, view: MerchantView, previous: dict, target_paise: int) -> dict:
+        """Respond to a buyer asking for a lower price.
+
+        The merchant is told a target, never a ceiling. A target is what the
+        buyer would like to pay; a ceiling is what the buyer can be made to pay,
+        and the difference is the whole reason the projection exists.
+        """
+        current = previous["total_paise"]
+        gap = current - target_paise
+        if gap <= 0:
+            return previous
+
+        if self.concession is Concession.MEET:
+            conceded = gap
+        elif self.concession is Concession.HAGGLE:
+            conceded = gap * HAGGLE_NUMERATOR // HAGGLE_DENOMINATOR
+        elif self.concession is Concession.OSCILLATING:
+            # Moves every round and converges on nothing. If a negotiation loop
+            # can be made not to terminate, this is what does it.
+            self._swing = 1 - self._swing
+            conceded = gap // 4 if self._swing else -(gap // 5)
+        else:
+            conceded = 0
+
+        if conceded == 0:
+            return previous
+
+        revised = dict(previous)
+        revised["line_items"] = [dict(item) for item in previous["line_items"]]
+        product_line = revised["line_items"][0]
+        product_line["amount_paise"] = max(0, product_line["amount_paise"] - conceded)
+        if self.hostility is not Hostility.TOTAL_MISMATCH:
+            revised["total_paise"] = sum(i["amount_paise"] for i in revised["line_items"])
+        else:
+            revised["total_paise"] = previous["total_paise"] - conceded - from_rupees(300)
+        revised["offer_id"] = f"off_{uuid.uuid4().hex[:12]}"
+        return revised

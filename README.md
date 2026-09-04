@@ -45,6 +45,7 @@ src/intentguard/
   policy/     the deterministic engine. Imports core/ and nothing else.
   ledger/     extraction, confidence scoring, mandate building.
   merchant/   untrusted: catalog, bounded view, quoting, hostile modes.
+  buyer/      the user's agent: negotiation, bounded and always terminating.
   gate/       orchestration, the untrusted wire boundary, timing, audit write.
   audit/      the tamper-evident decision trail.
   metrics/    measurement. Cannot import policy/, does no file I/O.
@@ -56,6 +57,7 @@ tests/
   policy/     one test per violation code, the threat table, regressions
   ledger/     extraction, calibration, injection reaching the extractor
   merchant/   the bounded-view gate, hostile quotes over the wire
+  buyer/      termination under adversarial merchants
   gate/       decision assembly, the boundary, receipts
   audit/      chain integrity and tamper detection
   metrics/    checked against hand-computed answers
@@ -76,7 +78,7 @@ uv pip install -e ".[dev]"
 
 ## Status
 
-Stages 1 to 5 of 12 complete. See the build order table in CLAUDE.md.
+Stages 1 to 6 of 12 complete. See the build order table in CLAUDE.md.
 
 | Stage | Gate | State |
 |---|---|---|
@@ -85,6 +87,7 @@ Stages 1 to 5 of 12 complete. See the build order table in CLAUDE.md.
 | 3. Gold set, 100 hand-labelled | Exists, labelled without running the engine | passing |
 | 4. `ledger/` extraction and confidence | Confidence correlates with correctness | passing |
 | 5. `merchant/` and bounded view | No ceiling in the serialised merchant view | passing |
+| 6. `buyer/` and negotiation | Terminates, always | passing |
 
 Audit and metrics are built rather than deferred, because the track's bar asks
 to see an audit trail and a graceful failure, and both sat near the end of the
