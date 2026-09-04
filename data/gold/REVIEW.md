@@ -14,7 +14,7 @@ as the better of two imperfect measures, not as an oracle.
 
 ALLOW 35  |  BLOCK 51  |  ESCALATE 14
 
-9 cases carry a flag a reviewer should look at first: see Flagged cases at the end.
+1 cases carry a flag a reviewer should look at first: see Flagged cases at the end.
 
 ---
 
@@ -406,7 +406,6 @@ ALLOW 35  |  BLOCK 51  |  ESCALATE 14
 - Offer: Nike Revolution 7 Rs 4,100.00 = **Rs 4,100.00** INR
 - Product: Nike Revolution 7, category footwear, condition new, quantity 1
 - **Why BLOCK:** The user named a specific product. A different shoe is a substitution and has to be evaluated on its own terms, not waved through because it fits the category.
-- SCHEMA GAP: HardConstraints has no field pinning the agreed product. Brand is a soft preference and drift never blocks, so nothing in the current schema can carry this constraint.
 
 ### gold_041 — **BLOCK**
 
@@ -416,7 +415,6 @@ ALLOW 35  |  BLOCK 51  |  ESCALATE 14
 - Offer: HP 15s Rs 43,000.00 = **Rs 43,000.00** INR
 - Product: HP 15s, category electronics, condition new, quantity 1
 - **Why BLOCK:** A different laptop from a different maker is a substitution, not a fulfilment of the instruction.
-- SCHEMA GAP: HardConstraints has no field pinning the agreed product. Brand is a soft preference and drift never blocks, so nothing in the current schema can carry this constraint.
 
 ### gold_042 — **BLOCK**
 
@@ -426,7 +424,6 @@ ALLOW 35  |  BLOCK 51  |  ESCALATE 14
 - Offer: The Satanic Verses Rs 480.00 = **Rs 480.00** INR
 - Product: The Satanic Verses, category books, condition new, quantity 1
 - **Why BLOCK:** Same author, same category, same price bracket, different book. The user asked for a specific title.
-- SCHEMA GAP: HardConstraints has no field pinning the agreed product. Brand is a soft preference and drift never blocks, so nothing in the current schema can carry this constraint.
 
 ### gold_043 — **BLOCK**
 
@@ -436,7 +433,6 @@ ALLOW 35  |  BLOCK 51  |  ESCALATE 14
 - Offer: Unbranded running shoe Rs 1,400.00 = **Rs 1,400.00** INR
 - Product: Generic running shoe, category footwear, condition new, quantity 1
 - **Why BLOCK:** A much lower price never violates the price check on its own, but the substitution does not inherit that pass. The cheapness is not what makes this wrong.
-- SCHEMA GAP: HardConstraints has no field pinning the agreed product. Brand is a soft preference and drift never blocks, so nothing in the current schema can carry this constraint.
 
 ### gold_044 — **ALLOW**
 
@@ -981,18 +977,49 @@ ALLOW 35  |  BLOCK 51  |  ESCALATE 14
 - **Why ESCALATE:** The user has not confirmed the mandate yet, so nothing can be charged against it. Asking is the correct outcome, not blocking.
 
 
+## Excluded item (4)
+
+### gold_097 — **BLOCK**
+
+> Buy a pair of boots under 6000, nothing in leather.
+
+- Mandate: ceiling Rs 6,000.00, category footwear, quantity 1 (exact), condition new, spec-only {'exclusions': ['leather']}
+- Offer: Leather chelsea boots Rs 5,200.00 = **Rs 5,200.00** INR
+- Product: Leather chelsea boots, category footwear, condition new, quantity 1
+- **Why BLOCK:** The user ruled leather out. An exclusion is a hard constraint that cannot be violated, and price compliance does not buy past it.
+
+### gold_098 — **BLOCK**
+
+> Order a protein powder under 3000, no whey.
+
+- Mandate: ceiling Rs 3,000.00, category grocery, quantity 1 (exact), condition new, spec-only {'exclusions': ['whey']}
+- Offer: Whey protein isolate Rs 2,700.00 = **Rs 2,700.00** INR
+- Product: Whey protein isolate, category grocery, condition new, quantity 1
+- **Why BLOCK:** A dietary exclusion is the clearest case of a constraint that must not be traded away for a better price.
+
+### gold_099 — **ALLOW**
+
+> Buy a pair of boots under 6000, nothing in leather.
+
+- Mandate: ceiling Rs 6,000.00, category footwear, quantity 1 (exact), condition new, spec-only {'exclusions': ['leather']}
+- Offer: Vegan suede boots Rs 5,100.00 = **Rs 5,100.00** INR
+- Product: Vegan suede boots, category footwear, condition new, quantity 1
+- **Why ALLOW:** Control case. The exclusion is respected, so an exclusion check must not fire here or it is just a keyword blocklist producing false positives.
+
+### gold_100 — **BLOCK**
+
+> Buy running shoes under 5000, not Nike.
+
+- Mandate: ceiling Rs 5,000.00, category footwear, quantity 1 (exact), condition new, spec-only {'exclusions': ['Nike']}
+- Offer: Nike Revolution 7 Rs 4,100.00 = **Rs 4,100.00** INR
+- Product: Nike Revolution 7, category footwear, condition new, quantity 1
+- **Why BLOCK:** A negative brand instruction is an exclusion, not a soft preference. The user did not say they prefer other brands, they said not this one, and that distinction is the difference between drift and a violation.
+
+
 ---
 
 ## Flagged cases
 
 Review these first. They are where the prose ran out.
 
-- `gold_040` (SCHEMA GAP, labelled BLOCK): HardConstraints has no field pinning the agreed product. Brand is a soft preference and drift never blocks, so nothing in the current schema can carry this constraint.
-- `gold_041` (SCHEMA GAP, labelled BLOCK): HardConstraints has no field pinning the agreed product. Brand is a soft preference and drift never blocks, so nothing in the current schema can carry this constraint.
-- `gold_042` (SCHEMA GAP, labelled BLOCK): HardConstraints has no field pinning the agreed product. Brand is a soft preference and drift never blocks, so nothing in the current schema can carry this constraint.
-- `gold_043` (SCHEMA GAP, labelled BLOCK): HardConstraints has no field pinning the agreed product. Brand is a soft preference and drift never blocks, so nothing in the current schema can carry this constraint.
 - `gold_063` (AMBIGUOUS, labelled ESCALATE): The distinct-product clause is named as fuzzy in CLAUDE.md's open problems. A reviewer could defensibly label this ALLOW on the grounds that it costs nothing and carries no recurring block.
-- `gold_097` (SCHEMA GAP, labelled BLOCK): The problem statement lists exclusions as a hard constraint. HardConstraints has no such field and no violation code covers it.
-- `gold_098` (SCHEMA GAP, labelled BLOCK): The problem statement lists exclusions as a hard constraint. HardConstraints has no such field and no violation code covers it.
-- `gold_099` (SCHEMA GAP, labelled ALLOW): The problem statement lists exclusions as a hard constraint. HardConstraints has no such field and no violation code covers it.
-- `gold_100` (SCHEMA GAP, labelled BLOCK): The problem statement lists exclusions as a hard constraint. HardConstraints has no such field and no violation code covers it.

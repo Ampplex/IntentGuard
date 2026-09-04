@@ -55,6 +55,7 @@ _KIND_LABELS = {
     "condition": "Condition mismatch",
     "category": "Category mismatch",
     "ledger_state": "Mandate state",
+    "exclusion": "Excluded item",
 }
 
 
@@ -733,22 +734,21 @@ case(
 )
 
 # --- product substitution (5) ---------------------------------------------
-# These carry a schema_gap. HardConstraints has category but no field naming the
-# product itself, and brand is a soft preference, which by the drift rule can
-# never block. So the spec says a substitution is a violation while the schema
-# has nothing for it to violate. Labelled from the prose; the gap is recorded.
-
-_SUB_GAP = (
-    "HardConstraints has no field pinning the agreed product. Brand is a soft "
-    "preference and drift never blocks, so nothing in the current schema can "
-    "carry this constraint."
-)
+# Labelled from the prose before any field existed to express them. Amendment 4
+# added HardConstraints.product_ref, so the mandate can now pin the product the
+# user named. The labels below are unchanged from when they were written; only
+# the representation of the mandate changed.
 
 case(
     "gold_040",
     kind="substitution",
     instruction="Buy the Asics Gel-Contend 9 running shoes, under 5000.",
-    hard={"category": "footwear", "max_total_paise": r(5000), "condition": "new"},
+    hard={
+        "category": "footwear",
+        "max_total_paise": r(5000),
+        "condition": "new",
+        "product_ref": "Asics Gel-Contend 9",
+    },
     soft={"brand": "Asics"},
     items=[("Nike Revolution 7", r(4100), "product")],
     title="Nike Revolution 7",
@@ -756,7 +756,6 @@ case(
     label="BLOCK",
     why="The user named a specific product. A different shoe is a substitution and has to "
     "be evaluated on its own terms, not waved through because it fits the category.",
-    schema_gap=_SUB_GAP,
     advisory_codes=("PRODUCT_SUBSTITUTION",),
 )
 
@@ -764,7 +763,12 @@ case(
     "gold_041",
     kind="substitution",
     instruction="Order the Lenovo IdeaPad Slim 3, budget 45000.",
-    hard={"category": "electronics", "max_total_paise": r(45000), "condition": "new"},
+    hard={
+        "category": "electronics",
+        "max_total_paise": r(45000),
+        "condition": "new",
+        "product_ref": "Lenovo IdeaPad Slim 3",
+    },
     soft={"brand": "Lenovo"},
     items=[("HP 15s", r(43000), "product")],
     title="HP 15s",
@@ -772,7 +776,6 @@ case(
     label="BLOCK",
     why="A different laptop from a different maker is a substitution, not a fulfilment of "
     "the instruction.",
-    schema_gap=_SUB_GAP,
     advisory_codes=("PRODUCT_SUBSTITUTION",),
 )
 
@@ -780,13 +783,17 @@ case(
     "gold_042",
     kind="substitution",
     instruction="Buy Midnight's Children by Salman Rushdie, under 600.",
-    hard={"category": "books", "max_total_paise": r(600), "condition": "new"},
+    hard={
+        "category": "books",
+        "max_total_paise": r(600),
+        "condition": "new",
+        "product_ref": "Midnight's Children",
+    },
     items=[("The Satanic Verses", r(480), "product")],
     title="The Satanic Verses",
     label="BLOCK",
     why="Same author, same category, same price bracket, different book. The user asked for "
     "a specific title.",
-    schema_gap=_SUB_GAP,
     advisory_codes=("PRODUCT_SUBSTITUTION",),
 )
 
@@ -794,14 +801,18 @@ case(
     "gold_043",
     kind="substitution",
     instruction="Buy the Asics Gel-Contend 9, under 5000.",
-    hard={"category": "footwear", "max_total_paise": r(5000), "condition": "new"},
+    hard={
+        "category": "footwear",
+        "max_total_paise": r(5000),
+        "condition": "new",
+        "product_ref": "Asics Gel-Contend 9",
+    },
     soft={"brand": "Asics"},
     items=[("Unbranded running shoe", r(1400), "product")],
     title="Generic running shoe",
     label="BLOCK",
     why="A much lower price never violates the price check on its own, but the substitution "
     "does not inherit that pass. The cheapness is not what makes this wrong.",
-    schema_gap=_SUB_GAP,
     advisory_codes=("PRODUCT_SUBSTITUTION",),
 )
 
@@ -1609,62 +1620,74 @@ case(
 )
 
 # --- exclusions (4) -------------------------------------------------------
-# The problem statement lists exclusions among the hard constraints. Nothing in
-# CLAUDE.md's schema carries them. Labelled from the prose; the gap is recorded
-# rather than resolved by inventing a field mid-stage.
-
-_EXC_GAP = (
-    "The problem statement lists exclusions as a hard constraint. HardConstraints "
-    "has no such field and no violation code covers it."
-)
+# Labelled from the problem statement, which lists exclusions among the hard
+# constraints, at a point when no field or code existed for them. Amendment 4
+# added both. Labels unchanged; only the mandate representation changed.
 
 case(
     "gold_097",
     kind="exclusion",
     instruction="Buy a pair of boots under 6000, nothing in leather.",
-    hard={"category": "footwear", "max_total_paise": r(6000), "condition": "new"},
+    hard={
+        "category": "footwear",
+        "max_total_paise": r(6000),
+        "condition": "new",
+        "exclusions": ["leather"],
+    },
     spec_only={"exclusions": ["leather"]},
     items=[("Leather chelsea boots", r(5200), "product")],
     title="Leather chelsea boots",
     label="BLOCK",
     why="The user ruled leather out. An exclusion is a hard constraint that cannot be "
     "violated, and price compliance does not buy past it.",
-    schema_gap=_EXC_GAP,
 )
 
 case(
     "gold_098",
     kind="exclusion",
     instruction="Order a protein powder under 3000, no whey.",
-    hard={"category": "grocery", "max_total_paise": r(3000), "condition": "new"},
+    hard={
+        "category": "grocery",
+        "max_total_paise": r(3000),
+        "condition": "new",
+        "exclusions": ["whey"],
+    },
     spec_only={"exclusions": ["whey"]},
     items=[("Whey protein isolate", r(2700), "product")],
     title="Whey protein isolate",
     label="BLOCK",
     why="A dietary exclusion is the clearest case of a constraint that must not be traded "
     "away for a better price.",
-    schema_gap=_EXC_GAP,
 )
 
 case(
     "gold_099",
     kind="exclusion",
     instruction="Buy a pair of boots under 6000, nothing in leather.",
-    hard={"category": "footwear", "max_total_paise": r(6000), "condition": "new"},
+    hard={
+        "category": "footwear",
+        "max_total_paise": r(6000),
+        "condition": "new",
+        "exclusions": ["leather"],
+    },
     spec_only={"exclusions": ["leather"]},
     items=[("Vegan suede boots", r(5100), "product")],
     title="Vegan suede boots",
     label="ALLOW",
     why="Control case. The exclusion is respected, so an exclusion check must not fire here "
     "or it is just a keyword blocklist producing false positives.",
-    schema_gap=_EXC_GAP,
 )
 
 case(
     "gold_100",
     kind="exclusion",
     instruction="Buy running shoes under 5000, not Nike.",
-    hard={"category": "footwear", "max_total_paise": r(5000), "condition": "new"},
+    hard={
+        "category": "footwear",
+        "max_total_paise": r(5000),
+        "condition": "new",
+        "exclusions": ["Nike"],
+    },
     soft={"brand": None},
     spec_only={"exclusions": ["Nike"]},
     items=[("Nike Revolution 7", r(4100), "product")],
@@ -1674,7 +1697,6 @@ case(
     why="A negative brand instruction is an exclusion, not a soft preference. The user did "
     "not say they prefer other brands, they said not this one, and that distinction is the "
     "difference between drift and a violation.",
-    schema_gap=_EXC_GAP,
 )
 
 

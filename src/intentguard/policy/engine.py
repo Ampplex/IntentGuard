@@ -40,6 +40,8 @@ def evaluate(ledger: IntentLedger, offer: Offer, *, now: datetime) -> PolicyResu
         *checks.check_addons(ledger, offer),
         *checks.check_condition(ledger, offer),
         *checks.check_category(ledger, offer),
+        *checks.check_product_identity(ledger, offer),
+        *checks.check_exclusions(ledger, offer),
     ]
     return PolicyResult(
         outcome=checks.outcome_for(violations),

@@ -389,3 +389,59 @@ The review's strongest advice is to add nothing. Agreed and recorded: no voice,
 no recommendations, no reputation scoring, no fraud detection, no third agent.
 The remaining work is finishing stages 4 to 9 and proving the security properties
 experimentally, starting with making the injection experiment non-vacuous.
+
+---
+
+# Amendment 4 — closing the two gaps the gold set found
+
+The gold set was written before the detector could express two of the
+constraints it labelled. That is the mechanism working: an independent set of
+labels measured a gap rather than an author asserting one. This closes both.
+
+## HardConstraints gains two fields
+
+**`product_ref: str | None`** pins the product when the user named one. It is
+what gives `PRODUCT_SUBSTITUTION` something to violate. Comparing against it is
+an exact match after folding punctuation and case, with no model and no
+similarity score in it, which is precisely what makes it safe to block on. Where
+nothing is pinned, a suspected swap is `semantic/`'s to raise and escalates
+instead, per Amendment 3.
+
+**`exclusions: tuple[str, ...]`** carries the terms the user ruled out. The
+problem statement lists exclusions among the hard constraints and nothing in the
+schema held them.
+
+## Violation code 20: EXCLUDED_ITEM
+
+Blocks. An exclusion is a hard constraint, so a better price never buys past it.
+
+## Exclusion matching is literal, and the negation guard is the interesting part
+
+The check folds case, matches on word boundaries, and searches the product title,
+brand, colour and every line item label -- a merchant can keep the excluded thing
+out of the title and still charge for it on a line.
+
+The subtle part is what it refuses to match. "Leather-free" contains "leather"
+and means the opposite of it. A naive literal matcher blocks exactly the products
+the user asked for, and a false block costs a merchant real revenue, which is the
+metric this project leads with. Matches preceded by "no", "non", "without" or
+"free of", or followed by "-free", are skipped. Substrings inside longer words
+never match at all, so an exclusion of "Nike" does not fire on "Nikecraft".
+
+This is a deterministic floor and not a complete answer. It catches a merchant
+offering the excluded thing by name, which is the common case, and it will miss a
+synonym: recognising that cowhide satisfies an exclusion of leather needs
+judgement about words. That belongs to `semantic/` and escalates rather than
+blocks.
+
+## What changed in the gold set, and what did not
+
+Four substitution mandates gained a `product_ref` and four exclusion mandates
+gained their `exclusions`, moving off the `spec_only_constraints` holding field.
+
+**No label changed.** Verified by capturing all 100 labels before the edit and
+diffing after: zero moved. Only the representation of the mandate changed, not
+the answer, and the answers were written from the prose before either field
+existed. Flagged cases drop from nine to one -- `gold_063`, the free smartphone
+bundled with a laptop, which is genuinely ambiguous under the distinct-product
+clause rather than merely unexpressible.

@@ -37,7 +37,17 @@ class ConfidenceField(StrictModel, Generic[T]):
 
 
 class HardConstraints(StrictModel):
-    """What the user actually authorized. Every field here can block a payment."""
+    """What the user actually authorized. Every field here can block a payment.
+
+    product_ref pins the agreed product when the user named one. It is what gives
+    PRODUCT_SUBSTITUTION something to violate: comparing against it is an exact
+    match with no model in it, which is why substitution can block. Similarity
+    without a pinned reference escalates instead, because a probabilistic score
+    must never move money.
+
+    exclusions are terms the user ruled out. They are hard constraints, so a
+    better price never buys past them.
+    """
 
     category: Category
     max_total_paise: int = Field(ge=0)
@@ -65,6 +75,8 @@ class HardConstraints(StrictModel):
     quantity: int = Field(default=1, ge=1)
     quantity_mode: QuantityMode = QuantityMode.EXACT
     condition: Condition | None = None
+    product_ref: str | None = None
+    exclusions: tuple[str, ...] = ()
     recurring_allowed: bool = False
     emi_allowed: bool = False
     addons_allowed: bool = False

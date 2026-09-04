@@ -31,6 +31,8 @@ FROZEN = {
     "LEDGER_NOT_CONFIRMED",
     "OFFER_MALFORMED",
     "UNCLASSIFIABLE_CATEGORY",
+    # Added by Amendment 4, closing the gap the gold set found.
+    "EXCLUDED_ITEM",
 }
 
 ESCALATES = {

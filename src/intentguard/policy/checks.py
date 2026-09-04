@@ -11,6 +11,7 @@ specification requires every violation to be reported, not the first one found.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 
 from ..core.decision import Violation
@@ -301,6 +302,90 @@ def check_category(ledger: IntentLedger, offer: Offer) -> list[Violation]:
             )
         ]
     return []
+
+
+def _searchable_text(offer: Offer) -> str:
+    """Everything about an offer a person would read to spot an excluded term."""
+    parts = [
+        offer.product.title,
+        offer.product.brand or "",
+        offer.product.colour or "",
+        *(item.label for item in offer.line_items),
+    ]
+    return " ".join(parts).lower()
+
+
+# "leather-free" contains "leather" and means the opposite of it. A literal
+# matcher that ignores this blocks legitimate orders, and a false block costs a
+# merchant real revenue, which is the metric this project cares most about.
+_NEGATED = re.compile(r"(?:\bno\s+|\bnon[-\s]?|\bwithout\s+|\bfree\s+of\s+)$")
+_NEGATING_SUFFIX = re.compile(r"^[-\s]?free\b")
+
+
+def check_exclusions(ledger: IntentLedger, offer: Offer) -> list[Violation]:
+    """Terms the user ruled out, matched literally.
+
+    This is a deterministic floor rather than a complete answer. It catches a
+    merchant offering the excluded thing by name, which is the common case, and
+    it will miss a synonym. Recognising that "cowhide" satisfies an exclusion of
+    "leather" needs judgement about words, which belongs to semantic/ and
+    escalates rather than blocks.
+    """
+    if not ledger.hard.exclusions:
+        return []
+
+    haystack = _searchable_text(offer)
+    found: list[Violation] = []
+    for term in ledger.hard.exclusions:
+        needle = term.strip().lower()
+        if not needle:
+            continue
+        for match in re.finditer(rf"\b{re.escape(needle)}\b", haystack):
+            before = haystack[: match.start()]
+            after = haystack[match.end() :]
+            if _NEGATED.search(before) or _NEGATING_SUFFIX.match(after):
+                continue
+            found.append(
+                _violation(
+                    ViolationCode.EXCLUDED_ITEM,
+                    field="exclusions",
+                    expected=term,
+                    observed=offer.product.title,
+                )
+            )
+            break
+    return found
+
+
+def _identity_key(text: str) -> str:
+    """Fold punctuation and spacing so "Gel-Contend 9" and "gel contend 9" agree."""
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
+
+
+def check_product_identity(ledger: IntentLedger, offer: Offer) -> list[Violation]:
+    """Did the merchant ship the product the user actually named?
+
+    Only runs when the mandate pins one. This is an exact comparison after
+    folding punctuation, with no model and no similarity score, which is what
+    makes it safe to block on. Where nothing is pinned, a suspected swap is
+    semantic/'s to raise and escalates instead.
+    """
+    reference = ledger.hard.product_ref
+    if not reference:
+        return []
+
+    wanted = _identity_key(reference)
+    offered = {_identity_key(offer.product.product_id), _identity_key(offer.product.title)}
+    if wanted in offered:
+        return []
+    return [
+        _violation(
+            ViolationCode.PRODUCT_SUBSTITUTION,
+            field="product_ref",
+            expected=reference,
+            observed=offer.product.title,
+        )
+    ]
 
 
 def outcome_for(violations: list[Violation]) -> Outcome:

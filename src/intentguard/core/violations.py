@@ -1,9 +1,9 @@
 """Violation vocabulary.
 
-This list is frozen at nineteen codes -- the sixteen set at stage 1 plus the
-three added by Amendment 1. Adding a code requires an explicit amendment to
-SPEC-DECISIONS.md, and tests/core/test_violations.py fails if the enum drifts
-from the frozen sixteen. The stage 2 gate is "a test per violation code", which
+This list is frozen at twenty codes -- the sixteen set at stage 1, three added
+by Amendment 1, and EXCLUDED_ITEM added by Amendment 4. Adding a code requires
+an explicit amendment to SPEC-DECISIONS.md, and tests/core/test_violations.py
+fails if the enum drifts from that list. The stage 2 gate is "a test per violation code", which
 is self-referential unless the list cannot quietly grow to match whatever got
 implemented.
 """
@@ -29,6 +29,7 @@ class ViolationCode(StrEnum):
     CONDITION_MISMATCH = "CONDITION_MISMATCH"
     CATEGORY_MISMATCH = "CATEGORY_MISMATCH"
     PRODUCT_SUBSTITUTION = "PRODUCT_SUBSTITUTION"
+    EXCLUDED_ITEM = "EXCLUDED_ITEM"
     LEDGER_EXPIRED = "LEDGER_EXPIRED"
     LEDGER_ALREADY_SPENT = "LEDGER_ALREADY_SPENT"
     LEDGER_NOT_CONFIRMED = "LEDGER_NOT_CONFIRMED"
@@ -96,6 +97,9 @@ EXPLANATION_TEMPLATES = MappingProxyType(
         ),
         ViolationCode.CATEGORY_MISMATCH: (
             "You authorized a purchase in {expected}, but this item is listed under {observed}."
+        ),
+        ViolationCode.EXCLUDED_ITEM: (
+            "You ruled out {expected}, and this order contains it: {observed}. Nothing was charged."
         ),
         ViolationCode.PRODUCT_SUBSTITUTION: (
             "The seller offered {observed} in place of {expected}. That is a different "
