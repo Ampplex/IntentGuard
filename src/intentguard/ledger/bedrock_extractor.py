@@ -58,6 +58,17 @@ Rules:
   could describe a product in there. Refusing a payment arrangement is not an
   exclusion: "no subscriptions" sets recurring_allowed to false, "no EMI" sets
   emi_allowed to false, and neither belongs in exclusions.
+- product_ref is only for a product the user named specifically, with a brand or
+  a model, such as "Asics Gel-Contend 9". A phrase describing a kind of thing,
+  like "running shoes" or "a laptop", is not a product_ref: leave it null. This
+  field can block a purchase, so a wrong one refuses orders the user wanted.
+- quantity is how many separate items the user wants. Words that are part of how
+  a product is normally sold are not a count: "a pair of shoes" is one pair, so
+  quantity is 1, and "a set of glasses" is one set. Only count when the user
+  really asks for several, as in "3 shirts" or "two monitors".
+- vague_phrases is for wording too imprecise to turn into a limit or a count,
+  such as "nothing too pricey", "a few" or "cheap". Ordinary words naming a
+  product are not vague: "running shoes" belongs in the category, not here.
 - Leave a field null where the instruction does not state it. A null is a useful
   answer; a guess is not.
 - Put every phrase too imprecise to act on into vague_phrases, quoted from the

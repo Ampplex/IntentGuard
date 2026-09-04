@@ -234,3 +234,56 @@ def test_a_competing_injected_number_costs_a_question_not_an_approval() -> None:
     )
     assert proposal.ledger.hard.max_total_paise == from_rupees(2000)
     assert proposal.ledger.status is LedgerStatus.AWAITING_CONFIRMATION
+
+
+# --- product_ref is the one extracted field that can block ----------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["running shoes", "a pair of shoes", "shoes", "the new laptop", "laptop", "  ", None],
+)
+def test_a_phrase_that_only_names_a_kind_of_thing_is_not_a_pinned_product(raw) -> None:
+    """Found by running the real chain: a model asked for a named product from
+    "buy me a pair of new running shoes" answered "running shoes".
+
+    That pins the mandate to a phrase no catalog entry matches, so every offer in
+    the category is blocked as a substitution. It is a false-block generator, and
+    false blocks are the metric this project leads with.
+    """
+    from intentguard.core import Category
+    from intentguard.ledger.build import meaningful_product_ref
+
+    category = Category.ELECTRONICS if "laptop" in (raw or "") else Category.FOOTWEAR
+    assert meaningful_product_ref(raw, category) is None
+
+
+@pytest.mark.parametrize(
+    "raw", ["Asics Gel-Contend 9", "Sennheiser HD 560S", "IdeaPad Slim 3", "Airdopes 141"]
+)
+def test_a_genuinely_named_product_is_kept(raw: str) -> None:
+    from intentguard.core import Category
+    from intentguard.ledger.build import meaningful_product_ref
+
+    assert meaningful_product_ref(raw, Category.ELECTRONICS) == raw
+
+
+def test_a_generic_reference_does_not_reach_the_mandate() -> None:
+    """Checked at the build, so it holds for every extractor rather than one prompt."""
+    proposal = build_ledger(
+        "Buy me a pair of new running shoes, budget 5000 rupees.",
+        ExtractedIntent(category="footwear", max_total_text="5000", product_ref="running shoes"),
+        created_at=NOW,
+    )
+    assert proposal.ledger.hard.product_ref is None
+
+
+def test_a_named_product_still_reaches_the_mandate() -> None:
+    proposal = build_ledger(
+        "Buy the Asics Gel-Contend 9, under 5000 rupees.",
+        ExtractedIntent(
+            category="footwear", max_total_text="5000", product_ref="Asics Gel-Contend 9"
+        ),
+        created_at=NOW,
+    )
+    assert proposal.ledger.hard.product_ref == "Asics Gel-Contend 9"

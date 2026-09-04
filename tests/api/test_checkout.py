@@ -84,7 +84,7 @@ def test_the_request_has_nowhere_to_put_an_amount() -> None:
     The endpoint accepts a mandate and an offer. There is no amount field to
     supply, so a caller cannot name a figure even by trying.
     """
-    assert set(CheckoutRequest.model_fields) == {"ledger", "offer"}
+    assert set(CheckoutRequest.model_fields) == {"ledger", "offer", "negotiated_product"}
     for name in CheckoutRequest.model_fields:
         assert "amount" not in name and "paise" not in name
 
@@ -284,3 +284,101 @@ def test_a_stale_mandate_is_still_refused(gateway) -> None:
     response = client.post("/api/create-order", json=stale)
     assert response.status_code == 409
     assert any(v["code"] == "LEDGER_EXPIRED" for v in response.json()["violations"])
+
+
+# --- the pipeline the React app drives ------------------------------------
+# Every endpoint the page calls, exercised against the same app object the
+# server runs. The page has no other way to reach the system.
+
+
+def test_the_built_app_is_served_at_the_root(gateway) -> None:
+    client, _ = gateway
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+def test_extraction_reports_which_backend_read_the_instruction(gateway) -> None:
+    """A page that cannot tell you whether a model was involved is a page you
+    cannot reason about."""
+    client, _ = gateway
+    payload = client.post(
+        "/api/extract",
+        json={"instruction": "Buy me a pair of new running shoes, budget 5000 rupees."},
+    ).json()
+    assert payload["backend"]
+    assert payload["ledger"]["hard"]["max_total_paise"] == from_rupees(5000)
+
+
+def test_an_instruction_with_no_ceiling_returns_a_question_not_a_mandate(gateway) -> None:
+    client, _ = gateway
+    payload = client.post(
+        "/api/extract", json={"instruction": "Get me a decent laptop, nothing too pricey."}
+    ).json()
+    assert payload["ledger"] is None
+    assert payload["question"]
+    assert "max_total_paise" in payload["weak_fields"]
+
+
+def test_negotiation_runs_the_real_agents_and_hides_the_ceiling(gateway) -> None:
+    client, _ = gateway
+    mandate = client.post(
+        "/api/extract",
+        json={"instruction": "Buy me a pair of new running shoes, budget 5000 rupees."},
+    ).json()
+    deal = client.post(
+        "/api/negotiate",
+        json={"ledger": mandate["ledger"], "hostility": "none", "concession": "haggle"},
+    ).json()
+
+    assert deal["ceiling_visible_to_merchant"] is False
+    assert deal["rounds"], "a negotiation with no rounds did not happen"
+    assert deal["offer"]["total_paise"] > 0
+
+
+def test_a_hostile_merchant_is_refused_through_the_whole_chain(gateway) -> None:
+    """Extraction, negotiation and the gate, in the order the page calls them."""
+    client, _ = gateway
+    mandate = client.post(
+        "/api/extract",
+        json={
+            "instruction": "Buy me a pair of new running shoes, budget 5000 rupees. "
+            "No subscriptions."
+        },
+    ).json()
+    deal = client.post(
+        "/api/negotiate",
+        json={
+            "ledger": mandate["ledger"],
+            "hostility": "trial_subscription",
+            "concession": "meet",
+        },
+    ).json()
+    verdict = client.post(
+        "/api/create-order",
+        json={
+            "ledger": mandate["ledger"],
+            "offer": deal["offer"],
+            "negotiated_product": deal["negotiated_product"],
+        },
+    )
+    assert verdict.status_code == 409
+    assert any(v["code"] == "RECURRING_NOT_AUTHORIZED" for v in verdict.json()["violations"])
+
+
+def test_an_unknown_merchant_behaviour_is_rejected(gateway) -> None:
+    client, _ = gateway
+    mandate = client.post(
+        "/api/extract", json={"instruction": "Buy shoes under 5000 rupees."}
+    ).json()
+    response = client.post(
+        "/api/negotiate", json={"ledger": mandate["ledger"], "hostility": "made_up"}
+    )
+    assert response.status_code == 400
+
+
+def test_the_catalog_is_readable_so_a_swap_can_be_spotted(gateway) -> None:
+    client, _ = gateway
+    catalog = client.get("/api/catalog").json()
+    assert len(catalog) > 5
+    assert all("title" in item and "price_paise" in item for item in catalog)

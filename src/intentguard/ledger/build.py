@@ -11,6 +11,7 @@ reading attached, which is the failure the track asks to see handled gracefully.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 
@@ -19,6 +20,7 @@ from ..core.enums import Category, Condition, LedgerStatus, QuantityMode
 from ..core.intent import HardConstraints, IntentLedger, SoftPreferences
 from ..core.money import format_paise, parse_rupees
 from .confidence import DEFAULT_THRESHOLD, score_extraction
+from .extractor import CATEGORY_WORDS
 from .schema import ExtractedIntent
 
 # Without these two, there is no mandate to speak of: nothing to spend against
@@ -57,6 +59,76 @@ def _ceiling_paise(extracted: ExtractedIntent) -> int | None:
     if extracted.limit_is_per_unit and extracted.quantity and extracted.quantity > 1:
         return stated * extracted.quantity
     return stated
+
+
+# Words that describe a kind of thing rather than name one. A reference built
+# only from these is a category, and pinning a mandate to a category blocks every
+# offer in it.
+_GENERIC_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "of",
+        "for",
+        "pair",
+        "set",
+        "new",
+        "some",
+        "any",
+        "item",
+        "items",
+        "product",
+        "products",
+        "thing",
+        "things",
+        "one",
+        "unit",
+        "units",
+        "running",
+        "wireless",
+        "electric",
+        "cotton",
+        "leather",
+        "steel",
+        "plain",
+        "small",
+        "medium",
+        "large",
+        "cheap",
+        "good",
+        "best",
+    }
+)
+
+
+def meaningful_product_ref(raw: str | None, category: Category | None) -> str | None:
+    """A named product, or None when the phrase only names a kind of thing.
+
+    product_ref is the one field that lets substitution *block*, so a value in it
+    has to actually distinguish one product from another. A model asked to
+    extract it from "buy me a pair of new running shoes" will happily answer
+    "running shoes", and that pins the mandate to a phrase no catalog entry
+    matches, blocking every offer in the category as a substitution.
+
+    The test is whether anything is left once category words and generic
+    descriptors are removed. "running shoes" leaves nothing. "Asics Gel-Contend
+    9" leaves all of it. Checked here rather than only in a prompt, because a
+    prompt is a request and this is a rule.
+    """
+    if not raw or not raw.strip():
+        return None
+
+    tokens = {t for t in re.split(r"[^a-z0-9]+", raw.lower()) if t}
+    if not tokens:
+        return None
+
+    generic = set(_GENERIC_WORDS)
+    if category is not None:
+        generic |= set(re.split(r"[^a-z0-9]+", Category(category).value))
+        generic |= set(CATEGORY_WORDS.get(Category(category).value, ()))
+
+    return raw.strip() if tokens - generic else None
 
 
 def _enum_or_none(enum_type, raw: str | None):
@@ -128,7 +200,7 @@ def build_ledger(
         recurring_allowed=extracted.recurring_allowed,
         emi_allowed=extracted.emi_allowed,
         addons_allowed=extracted.addons_allowed,
-        product_ref=extracted.product_ref,
+        product_ref=meaningful_product_ref(extracted.product_ref, category),
         exclusions=tuple(extracted.exclusions),
     )
     ledger = IntentLedger(

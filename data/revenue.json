@@ -1,0 +1,21 @@
+{
+  "mandates": 200,
+  "total_authorised_paise": 139288400,
+  "hidden": {
+    "orders_completed": 200,
+    "orders_refused": 0,
+    "total_paid_paise": 44499845,
+    "average_paid_paise": 222499
+  },
+  "exposed": {
+    "orders_completed": 200,
+    "orders_refused": 0,
+    "total_paid_paise": 137895516,
+    "average_paid_paise": 689477
+  },
+  "extra_paid_per_order_paise": 466978,
+  "extra_paid_total_paise": 93395671,
+  "share_of_ceiling_hidden": 0.31947990643872715,
+  "share_of_ceiling_exposed": 0.99,
+  "claim": "The same mandates, catalog and negotiation in both arms. The only difference is whether the merchant was told max_total_paise."
+}
