@@ -27,7 +27,7 @@ from __future__ import annotations
 from ..core.decision import DriftItem, DriftReport
 from ..core.intent import IntentLedger
 from ..core.offer import Offer
-from .similarity import LexicalSimilarity, Similarity
+from .similarity import LexicalSimilarity, Similarity, tokens
 
 WEIGHTS: dict[str, float] = {
     "brand": 0.5,
@@ -38,6 +38,21 @@ WEIGHTS: dict[str, float] = {
 # Below this, two values for the same preference are different things rather
 # than the same thing spelled differently.
 MATCH_THRESHOLD = 0.6
+
+
+def _preference_met(wanted: str, offered: str, scorer: Similarity) -> bool:
+    """Is what the user asked for present in what arrived?
+
+    Coverage rather than similarity, for the same reason substitution matching
+    uses it: the two strings are not peers. "express" against "Express delivery"
+    is a met preference described more fully, and a symmetric measure scored it
+    0.5 and called it drift. What matters is whether the preference is in there,
+    not whether the merchant used exactly as many words.
+    """
+    asked = tokens(wanted)
+    if asked and asked <= tokens(offered):
+        return True
+    return scorer.score(wanted, offered) >= MATCH_THRESHOLD
 
 
 def _compare(
@@ -56,7 +71,7 @@ def _compare(
     offered = (offered or "").strip()
     if not wanted or not offered:
         return None
-    if scorer.score(wanted, offered) >= MATCH_THRESHOLD:
+    if _preference_met(wanted, offered, scorer):
         return None
     return DriftItem(field=field, requested=wanted, offered=offered, weight=WEIGHTS[field])
 
@@ -94,9 +109,42 @@ def score_drift(
     return DriftReport(score=min(1.0, score), items=items)
 
 
+# Words that actually name a speed. A shipping line called "Delivery" or "Free
+# delivery" says nothing about how fast it is.
+SPEED_WORDS = (
+    "express",
+    "standard",
+    "priority",
+    "overnight",
+    "next day",
+    "next-day",
+    "same day",
+    "same-day",
+    "economy",
+    "scheduled",
+    "two day",
+    "two-day",
+    "slow",
+    "fast",
+    "rush",
+)
+
+
 def _delivery_of(offer: Offer) -> str | None:
-    """The shipping line's label, which is where a merchant names the speed."""
+    """The delivery speed a merchant named, if they named one at all.
+
+    Reading the whole shipping label as a speed was wrong and misfired
+    constantly: a line called "Delivery" compared against a preference for
+    "standard" looked like a missed preference, so almost every offer carrying a
+    plain shipping line reported drift it had not caused.
+
+    Silence is not a mismatch. A label with no speed word in it is a merchant
+    saying nothing about speed, which cannot drift from anything.
+    """
     for item in offer.line_items:
-        if item.kind.value == "shipping":
+        if item.kind.value != "shipping":
+            continue
+        lowered = item.label.lower()
+        if any(word in lowered for word in SPEED_WORDS):
             return item.label
     return None

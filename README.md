@@ -57,7 +57,7 @@ src/intentguard/
   payments/   Razorpay adapter, idempotency, the uncertain-execution path.
   bench/      generator (imports nothing from intentguard) and harness.
   gate/       orchestration, the untrusted wire boundary, timing, audit write.
-  audit/      the tamper-evident decision trail.
+  audit/      the tamper-evident trail, plus rendering and receipt verification.
   metrics/    measurement. Cannot import policy/, does no file I/O.
 data/
   gold/       100 hand-labelled cases, held out. Cannot import intentguard.
@@ -73,7 +73,7 @@ tests/
   payments/   no call on a block, the timeout path, test-mode enforcement
   bench/      generator independence, holdout stability, injection twins
   gate/       decision assembly, the boundary, receipts
-  audit/      chain integrity and tamper detection
+  audit/      chain integrity, tamper detection, receipt verification, rendering
   metrics/    checked against hand-computed answers
   gold/       the gold set is well formed and internally consistent
   structure/  import graph, clock reads, orphan codes, dataset independence
@@ -95,7 +95,7 @@ PYTHONPATH=src .venv/bin/python -m intentguard.bench.harness     # report the tr
 
 ## Status
 
-Stages 1 to 9 of 12 complete. See the build order table in CLAUDE.md.
+Stages 1 to 10 of 12 complete. See the build order table in CLAUDE.md.
 
 | Stage | Gate | State |
 |---|---|---|
@@ -108,6 +108,7 @@ Stages 1 to 9 of 12 complete. See the build order table in CLAUDE.md.
 | 7. `semantic/` substitution and drift | Substitution cases classified correctly | passing |
 | 8. `payments/` and idempotency | No call on BLOCK; timeout path tested | passing |
 | 9. `bench/` generator and harness | Generator import test passes; full run reports | passing |
+| 10. Compliance receipt and audit rendering | Every decision inspectable | passing |
 
 Audit and metrics are built rather than deferred, because the track's bar asks
 to see an audit trail and a graceful failure, and both sat near the end of the

@@ -113,3 +113,76 @@ def test_a_very_long_brand_string_does_not_stall_the_gate() -> None:
     started = time.perf_counter()
     score_drift(ledger_wanting(brand="Asics"), offer_with(brand="Asics" * 100_000))
     assert (time.perf_counter() - started) * 1000 < 5.0
+
+
+def test_a_plain_shipping_label_is_not_a_delivery_speed() -> None:
+    """Reading the whole label as a speed misfired on almost every offer.
+
+    A line called "Delivery" compared against a preference for "standard" looked
+    like a missed preference, so any offer with an ordinary shipping line
+    reported drift it had not caused.
+    """
+    ledger = ledger_wanting(delivery_speed="standard")
+    for label in ("Delivery", "Free delivery", "Shipping", "Dispatch"):
+        offer = an_offer(
+            line_items=[
+                LineItem(label="Shoes", amount_paise=from_rupees(4200), kind=LineItemKind.PRODUCT),
+                LineItem(label=label, amount_paise=0, kind=LineItemKind.SHIPPING),
+            ],
+            total_paise=from_rupees(4200),
+        )
+        report = score_drift(ledger, offer)
+        assert report.items == [], f"{label!r} was read as a delivery speed"
+
+
+def test_a_label_that_names_a_speed_is_still_compared() -> None:
+    ledger = ledger_wanting(delivery_speed="express")
+    offer = an_offer(
+        line_items=[
+            LineItem(label="Shoes", amount_paise=from_rupees(4200), kind=LineItemKind.PRODUCT),
+            LineItem(label="Economy shipping", amount_paise=0, kind=LineItemKind.SHIPPING),
+        ],
+        total_paise=from_rupees(4200),
+    )
+    assert [item.field for item in score_drift(ledger, offer).items] == ["delivery_speed"]
+
+
+def test_a_matching_speed_produces_no_drift() -> None:
+    ledger = ledger_wanting(delivery_speed="express")
+    offer = an_offer(
+        line_items=[
+            LineItem(label="Shoes", amount_paise=from_rupees(4200), kind=LineItemKind.PRODUCT),
+            LineItem(label="Express delivery", amount_paise=0, kind=LineItemKind.SHIPPING),
+        ],
+        total_paise=from_rupees(4200),
+    )
+    assert score_drift(ledger, offer).items == []
+
+
+def test_a_preference_described_more_fully_is_still_met() -> None:
+    """The same asymmetry that broke substitution matching, in drift.
+
+    "express" against "Express delivery" is the preference met and described
+    more fully. A symmetric measure scored it 0.5 and called it drift, so a
+    merchant doing exactly what was asked looked like a merchant who had not.
+    """
+    for wanted, offered in [
+        ("express", "Express delivery"),
+        ("Asics", "Asics Corporation"),
+        ("blue", "Deep blue"),
+    ]:
+        offer = an_offer()
+        offer = offer.model_copy(
+            update={"product": offer.product.model_copy(update={"colour": offered})}
+        )
+        assert score_drift(ledger_wanting(colour=wanted), offer).items == [], (
+            f"{wanted!r} should be met by {offered!r}"
+        )
+
+
+def test_a_genuinely_different_value_is_still_drift() -> None:
+    offer = an_offer()
+    offer = offer.model_copy(
+        update={"product": offer.product.model_copy(update={"colour": "black"})}
+    )
+    assert score_drift(ledger_wanting(colour="blue"), offer).items
