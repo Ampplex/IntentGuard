@@ -63,6 +63,13 @@
   .liveness { font-size: .82rem; color: var(--ink-faint); max-width: 68ch; margin: 0; }
   .liveness strong { color: var(--ink-soft); font-weight: 600; }
 
+  .provenance { border: 1px solid var(--rule); border-left: 3px solid var(--accent); background: var(--surface); border-radius: 4px; padding: 13px 16px; margin-top: 18px; font-size: .84rem; }
+  .provenance h3 { font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 8px; }
+  .provenance dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; }
+  .provenance dt { font-family: var(--mono); font-size: .76rem; color: var(--accent); }
+  .provenance dd { margin: 0; color: var(--ink-soft); }
+  .provenance .consequence { margin: 10px 0 0; padding-top: 9px; border-top: 1px solid var(--rule-soft); font-family: var(--serif); color: var(--ink-soft); }
+
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(146px, 1fr)); gap: 0; border-top: 1px solid var(--rule); margin-top: 22px; }
   .tile { padding: 14px 18px 14px 0; border-right: 1px solid var(--rule-soft); }
   .tile:last-child { border-right: 0; }
@@ -142,6 +149,7 @@
     <h1>IntentGuard</h1>
     <p class="standfirst">The authorization layer that lets a Razorpay merchant safely accept an order from an AI buyer. Every figure below was produced by running the system, not typed in.</p>
     <p class="liveness" id="liveness"></p>
+    <div class="provenance" id="provenance"></div>
     <div class="tiles" id="tiles"></div>
   </header>
 
@@ -197,6 +205,19 @@
   const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c; if (h !== undefined) n.innerHTML = h; return n; };
   const esc = s => String(s).replace(/[&<>]/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]));
   const pct = v => (v * 100).toFixed(1).replace(/\.0$/, "") + "%";
+
+  const prov = D.what_did_not_run;
+  if (prov) {
+    const box = document.getElementById("provenance");
+    box.innerHTML = "<h3>What ran, and what did not</h3>";
+    const dl = el("dl");
+    ["extraction", "similarity", "payments"].forEach(k => {
+      dl.appendChild(el("dt", null, k));
+      dl.appendChild(el("dd", null, esc(prov[k])));
+    });
+    box.appendChild(dl);
+    box.appendChild(el("p", "consequence", esc(prov.consequence)));
+  }
 
   document.getElementById("liveness").innerHTML =
     esc(D.note) + " Generated <strong>" + esc(D.generated_at.slice(0, 19).replace("T", " ")) + " UTC</strong>.";

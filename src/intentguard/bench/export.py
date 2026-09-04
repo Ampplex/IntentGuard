@@ -31,6 +31,7 @@ from ..gate import (
     resolve_mandate,
     resolve_offer,
 )
+from ..ledger import MODEL as CLAUDE_MODEL
 from ..ledger import RuleBasedExtractor, build_ledger
 from ..merchant import CATALOG, Concession, Hostility, MerchantAgent, project
 from ..payments import PaymentTimeout, RefusingClient, execute, reconcile
@@ -371,9 +372,33 @@ def build() -> dict[str, Any]:
         "generated_at": datetime.now(UTC).isoformat(),
         "note": (
             "Every figure on this page was produced by running the system at export "
-            "time. No value is typed in. Payments use a stand-in for Razorpay's "
-            "test-mode API, so no live call was made."
+            "time. No value is typed in."
         ),
+        # Stated on the page rather than left to be assumed. Saying only that
+        # payments were stubbed, while silently using the offline extractor,
+        # would let a reader conclude a model had run.
+        "what_did_not_run": {
+            "extraction": (
+                f"{EXTRACT.__class__.__name__}, the deterministic parser. The "
+                f"model-backed path ({CLAUDE_MODEL}) is wired and was not called: "
+                "no API key is configured in this environment."
+            ),
+            "similarity": (
+                "LexicalSimilarity, the deterministic scorer. The sentence-transformer "
+                "path is wired and was not called."
+            ),
+            "payments": (
+                "A stand-in answering in the shapes Razorpay documents. No live call "
+                "was made; endpoints and field shapes were read from Razorpay's "
+                "documentation rather than recalled."
+            ),
+            "consequence": (
+                "The deterministic engine is exercised in full, which is the part the "
+                "project's claim rests on: no model is permitted in the decision path "
+                "at all. What is untested is extraction recall on messy language, "
+                "where a model is expected to do better than regular expressions."
+            ),
+        },
         "scenarios": scenarios,
         "timeout": timeout,
         "mandate_escalations": escalation_scenario(),

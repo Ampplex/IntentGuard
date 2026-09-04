@@ -1,6 +1,12 @@
 {
-  "generated_at": "2026-09-04T14:04:00.928113+00:00",
-  "note": "Every figure on this page was produced by running the system at export time. No value is typed in. Payments use a stand-in for Razorpay's test-mode API, so no live call was made.",
+  "generated_at": "2026-09-04T14:18:28.914721+00:00",
+  "note": "Every figure on this page was produced by running the system at export time. No value is typed in.",
+  "what_did_not_run": {
+    "extraction": "RuleBasedExtractor, the deterministic parser. The model-backed path (claude-opus-5) is wired and was not called: no API key is configured in this environment.",
+    "similarity": "LexicalSimilarity, the deterministic scorer. The sentence-transformer path is wired and was not called.",
+    "payments": "A stand-in answering in the shapes Razorpay documents. No live call was made; endpoints and field shapes were read from Razorpay's documentation rather than recalled.",
+    "consequence": "The deterministic engine is exercised in full, which is the part the project's claim rests on: no model is permitted in the decision path at all. What is untested is extraction recall on messy language, where a model is expected to do better than regular expressions."
+  },
   "scenarios": [
     {
       "name": "An honest merchant, haggled down",
@@ -73,17 +79,17 @@
         "score": 0.0,
         "items": []
       },
-      "latency_ms": 0.1052,
+      "latency_ms": 0.0975,
       "payment": {
         "outcome": "placed",
         "reached_the_rail": true,
         "order_id": "order_0001",
         "amount": "₹3,992.24",
-        "receipt": "ig_8caf034dff50be3699c9e93a8efb3773",
+        "receipt": "ig_510fbc70b3e7925f4ce840b81d3b1311",
         "ledger_after": "SPENT"
       },
       "compliance_receipt": {
-        "receipt_id": "rcp_30d6a8384f8d",
+        "receipt_id": "rcp_0e11081c69d5",
         "amount": "₹3,992.24",
         "constraints_checked": [
           "mandate_state",
@@ -100,7 +106,7 @@
           "product_identity",
           "exclusions"
         ],
-        "offer_hash": "sha256:7e913e9853d87615456f3a209ca9435ea57dbf55cb5590cd87386b9fd4ece940"
+        "offer_hash": "sha256:a13a4a3bb3909ca8b0759e938cb8355f1f8f26f51fd67135690d01f70ba0a76d"
       }
     },
     {
@@ -150,13 +156,13 @@
         "score": 0.0,
         "items": []
       },
-      "latency_ms": 0.1073,
+      "latency_ms": 0.0983,
       "payment": {
         "outcome": "not_authorized",
         "reached_the_rail": false,
         "order_id": null,
         "amount": "₹3,870.00",
-        "receipt": "ig_4365ac2cd4808947eca9cc8ea1c39915",
+        "receipt": "ig_f298c0f4524d22d4e129b75fcb282440",
         "ledger_after": "ACTIVE"
       },
       "compliance_receipt": null
@@ -208,13 +214,13 @@
         "score": 0.0,
         "items": []
       },
-      "latency_ms": 0.0903,
+      "latency_ms": 0.0754,
       "payment": {
         "outcome": "not_authorized",
         "reached_the_rail": false,
         "order_id": null,
         "amount": "₹4,599.00",
-        "receipt": "ig_1d501fa91983afcc0c3a3198b0687156",
+        "receipt": "ig_f262ace727f7465620ca3b9614ba9df8",
         "ledger_after": "ACTIVE"
       },
       "compliance_receipt": null
@@ -260,13 +266,13 @@
         "score": 0.0,
         "items": []
       },
-      "latency_ms": 0.0598,
+      "latency_ms": 0.0543,
       "payment": {
         "outcome": "not_authorized",
         "reached_the_rail": false,
         "order_id": null,
         "amount": "₹4,200.00",
-        "receipt": "ig_6562ae63f62f56e71f9bd81f76cb005e",
+        "receipt": "ig_29e4250af965cd4d1fb4821c30f03253",
         "ledger_after": "ACTIVE"
       },
       "compliance_receipt": null
@@ -306,17 +312,17 @@
         "score": 0.0,
         "items": []
       },
-      "latency_ms": 0.062,
+      "latency_ms": 0.054,
       "payment": {
         "outcome": "placed",
         "reached_the_rail": true,
         "order_id": "order_0001",
         "amount": "₹4,100.00",
-        "receipt": "ig_5a75fe6f7f3a781e48329a30ed412b7b",
+        "receipt": "ig_58aef0a58134bf30bc457ebbf9400db6",
         "ledger_after": "SPENT"
       },
       "compliance_receipt": {
-        "receipt_id": "rcp_4869bc8b071a",
+        "receipt_id": "rcp_1b251fce438e",
         "amount": "₹4,100.00",
         "constraints_checked": [
           "mandate_state",
@@ -333,7 +339,7 @@
           "product_identity",
           "exclusions"
         ],
-        "offer_hash": "sha256:766e51111f6a044f768ad2568ab4c7e375971b390ab247f01abeb7a30f36c9ea"
+        "offer_hash": "sha256:bc63b112002af9c9fdd25c52723808937a0a67e66179ffdc841ce548408ab6fe"
       }
     }
   ],
@@ -492,9 +498,9 @@
   ],
   "latency": {
     "samples": 5000,
-    "p50_ms": 0.0624,
-    "p95_ms": 0.0647,
-    "p99_ms": 0.0808
+    "p50_ms": 0.0621,
+    "p95_ms": 0.0638,
+    "p99_ms": 0.0709
   },
   "benchmark": {
     "dataset": "synthetic / train",
@@ -555,10 +561,10 @@
     },
     "escalation_rate": 0.0,
     "escalation_recall": 1.0,
-    "latency_p50_ms": 0.06441600271500647,
-    "latency_p95_ms": 0.08462497498840094,
-    "latency_p99_ms": 0.14475002535618842,
-    "latency_max_ms": 2.4676249886397272,
+    "latency_p50_ms": 0.06558300810866058,
+    "latency_p95_ms": 0.10933299199678004,
+    "latency_p99_ms": 0.21437500254251063,
+    "latency_max_ms": 3.2778340100776404,
     "explanation_quality": {
       "violations_scored": 797,
       "complete": 1.0,
@@ -601,37 +607,37 @@
     },
     "sample": [
       {
-        "record_id": "aud_cd1a6e24ada9",
+        "record_id": "aud_e5d6b58929ce",
         "sequence": 0,
         "previous_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-        "intent_id": "int_c99ce231d381",
-        "offer_id": "off_49c33cb1d248",
-        "mandate_hash": "sha256:18b0a635de4a14405929c05e85324682ff8d9b072c890dc4f9871adbd569741b",
-        "offer_hash": "sha256:7e913e9853d87615456f3a209ca9435ea57dbf55cb5590cd87386b9fd4ece940",
+        "intent_id": "int_26ec9661c669",
+        "offer_id": "off_3886b323bde7",
+        "mandate_hash": "sha256:192f1f0ed0eda542cf16585895fe8f235e9b2b644372e97ea32ac5783516c2db",
+        "offer_hash": "sha256:a13a4a3bb3909ca8b0759e938cb8355f1f8f26f51fd67135690d01f70ba0a76d",
         "decision": "ALLOW",
         "violations": [],
         "checked_total_paise": 399224,
         "max_total_paise": 430000,
         "latency_ms": {
           "schema_ms": 0.0,
-          "arithmetic_ms": 0.0457499991171062,
-          "semantic_ms": 0.057249999372288585,
+          "arithmetic_ms": 0.040875020204111934,
+          "semantic_ms": 0.05458400119096041,
           "confidence_ms": 0.0,
-          "drift_ms": 0.057249999372288585,
-          "total_ms": 0.10516602196730673
+          "drift_ms": 0.05458400119096041,
+          "total_ms": 0.0974580179899931
         },
         "human_confirmed": false,
         "engine_version": "0.1.0",
         "checked_at": "2026-09-04T10:05:00Z"
       },
       {
-        "record_id": "aud_a71ab60a17b4",
+        "record_id": "aud_5b7f9a4de6eb",
         "sequence": 1,
-        "previous_hash": "sha256:c7594f8c77081ffc219f3d76b8a6b265fa19bcbf6fb101176aef248c34f17a95",
-        "intent_id": "int_b51082e4888c",
-        "offer_id": "off_ae25e8093836",
-        "mandate_hash": "sha256:2b18dcbbca16e5ffa8c999d9e71a698f0c1f147296d28f3674b3d4d98484f0e2",
-        "offer_hash": "sha256:97a711a340aaa230b48ba375cc33fa41708a5a777930676967d86f7584db1a79",
+        "previous_hash": "sha256:af47b9cd04a83c89631d606c8535a9171accd1975f9f440b181b36a6133104d8",
+        "intent_id": "int_122201709f57",
+        "offer_id": "off_a1f3a8ce9b88",
+        "mandate_hash": "sha256:32ec8d0595821a4a2706df209f267dfae19b2be8926dd1013496d28cc33250b8",
+        "offer_hash": "sha256:a2b868b2b853c01162a2c9192281f1c578236234110c7994f804ec38ebc7c9b5",
         "decision": "BLOCK",
         "violations": [
           {
@@ -647,24 +653,24 @@
         "max_total_paise": 430000,
         "latency_ms": {
           "schema_ms": 0.0,
-          "arithmetic_ms": 0.05779101047664881,
-          "semantic_ms": 0.047582987463101745,
+          "arithmetic_ms": 0.05224999040365219,
+          "semantic_ms": 0.04449998959898949,
           "confidence_ms": 0.0,
-          "drift_ms": 0.047582987463101745,
-          "total_ms": 0.10729199857451022
+          "drift_ms": 0.04449998959898949,
+          "total_ms": 0.09833299554884434
         },
         "human_confirmed": false,
         "engine_version": "0.1.0",
         "checked_at": "2026-09-04T10:05:00Z"
       },
       {
-        "record_id": "aud_702b625e252a",
+        "record_id": "aud_2dce62e1b37f",
         "sequence": 2,
-        "previous_hash": "sha256:088cb87cc7aa8df99afbcd5c154ba74e4fa3f359e1fc30a62075f27c7a447701",
-        "intent_id": "int_3a65ccb38fbf",
-        "offer_id": "off_1d59c8ebcf88",
-        "mandate_hash": "sha256:1b11f85da6d161c5b235d4c4dedac4fe35a964c139875d2b7d6295282fa43c0d",
-        "offer_hash": "sha256:aa5ac89809eb33d05736ef663613dfa6c3b97d1dff498aa74978d8fe3d049d21",
+        "previous_hash": "sha256:c08616e5a0627b80beca5c1f961172e3dcb227e5d4b9010894c40550f66163e2",
+        "intent_id": "int_29be6faa73be",
+        "offer_id": "off_09503d20f278",
+        "mandate_hash": "sha256:c455c50c7710b835820c8e244a46b72fd2b938c0f905290eac4f2e7c67c62d0a",
+        "offer_hash": "sha256:bb4b8c79bee31be45ef7f62b1721662e9508f34834c14a3123ff37b04e1ecf54",
         "decision": "BLOCK",
         "violations": [
           {
@@ -680,11 +686,11 @@
         "max_total_paise": 430000,
         "latency_ms": {
           "schema_ms": 0.0,
-          "arithmetic_ms": 0.04470901330932975,
-          "semantic_ms": 0.044374988647177815,
+          "arithmetic_ms": 0.035500008380040526,
+          "semantic_ms": 0.038708007195964456,
           "confidence_ms": 0.0,
-          "drift_ms": 0.044374988647177815,
-          "total_ms": 0.09033299284055829
+          "drift_ms": 0.038708007195964456,
+          "total_ms": 0.07537502096965909
         },
         "human_confirmed": false,
         "engine_version": "0.1.0",
