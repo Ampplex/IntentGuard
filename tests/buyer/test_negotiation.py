@@ -212,3 +212,82 @@ def test_the_log_ends_on_the_quote_that_was_actually_accepted() -> None:
     """
     result = BuyerAgent(mandate()).negotiate(MerchantAgent(concession=Concession.HAGGLE))
     assert result.rounds[-1].quoted_total_paise == result.final_payload["total_paise"]
+
+
+# --- the merchant is untrusted here too -----------------------------------
+# Everything the buyer reads from a quote was written by the other side. These
+# were all crashes: a missing, null or non-numeric total ended the negotiation
+# with an exception, which is a denial of service against the user's own agent
+# rather than a negotiating position.
+
+
+class MalformedMerchant(MerchantAgent):
+    """Sends whatever it likes, whenever it likes."""
+
+    def __init__(self, payload: dict, *, only_on_counter: bool = False) -> None:
+        super().__init__()
+        self._payload = payload
+        self._only_on_counter = only_on_counter
+
+    def quote(self, view):
+        return super().quote(view) if self._only_on_counter else self._payload
+
+    def counter(self, view, previous, target_paise):
+        return self._payload
+
+
+BAD_PAYLOADS = {
+    "no total": {"offer_id": "x", "line_items": [{"amount_paise": 100}]},
+    "total is text": {"offer_id": "x", "total_paise": "cheap", "line_items": [{"a": 1}]},
+    "total is null": {"offer_id": "x", "total_paise": None, "line_items": [{"a": 1}]},
+    "total is a bool": {"offer_id": "x", "total_paise": True, "line_items": [{"a": 1}]},
+    "no line items": {"offer_id": "x", "total_paise": 100},
+    "empty line items": {"offer_id": "x", "total_paise": 100, "line_items": []},
+    "not a dict at all": {"offer_id": "x"},
+}
+
+
+@pytest.mark.parametrize("payload", BAD_PAYLOADS.values(), ids=list(BAD_PAYLOADS))
+def test_a_malformed_opening_quote_ends_the_negotiation_rather_than_the_process(payload) -> None:
+    result = BuyerAgent(mandate()).negotiate(MalformedMerchant(payload))
+    assert result.ending is Ending.UNUSABLE_QUOTE
+    assert not result.accepted
+
+
+@pytest.mark.parametrize("payload", BAD_PAYLOADS.values(), ids=list(BAD_PAYLOADS))
+def test_a_malformed_counter_falls_back_to_the_last_readable_quote(payload) -> None:
+    """A counter nobody can read is not a concession, and not a reason to crash."""
+    result = BuyerAgent(mandate(4300)).negotiate(MalformedMerchant(payload, only_on_counter=True))
+    assert result.ending in {Ending.ACCEPTED_WITHIN_CEILING, Ending.STALLED}
+    assert result.final_payload["total_paise"] == from_rupees(4100)
+
+
+def test_an_unreadable_quote_is_still_handed_to_the_gate() -> None:
+    """The buyer cannot reason about it. It is not entitled to refuse it either."""
+    payload = BAD_PAYLOADS["total is text"]
+    result = BuyerAgent(mandate()).negotiate(MalformedMerchant(payload))
+    assert result.final_payload == payload, "pydantic copies it; the content is what matters"
+    decision, _ = receive(mandate(), result.final_payload, now=NOW)
+    assert decision.decision is Outcome.BLOCK
+
+
+def test_an_empty_quote_is_not_silently_accepted() -> None:
+    """This one was worse than a crash: a payload with no items reached accepted."""
+    result = BuyerAgent(mandate()).negotiate(MalformedMerchant(BAD_PAYLOADS["empty line items"]))
+    assert not result.accepted
+
+
+# --- configuration footguns ----------------------------------------------
+
+
+@pytest.mark.parametrize("bps", [10_001, 20_000, 0, -1])
+def test_a_target_at_or_above_the_ceiling_is_refused(bps: int) -> None:
+    """Aiming above the ceiling defeats the reason a target exists."""
+    with pytest.raises(ValueError, match="target_bps"):
+        BuyerAgent(mandate(), target_bps=bps)
+
+
+def test_the_target_stays_under_the_ceiling_across_the_whole_valid_range() -> None:
+    ceiling = from_rupees(5000)
+    for bps in (1, 5_000, 9_000, 9_999, 10_000):
+        assert target_for(ceiling, bps) <= ceiling

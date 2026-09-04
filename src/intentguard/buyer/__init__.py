@@ -9,6 +9,7 @@ from .negotiation import (
     Ending,
     Negotiation,
     Round,
+    stated_total,
     target_for,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "Ending",
     "Negotiation",
     "Round",
+    "stated_total",
     "target_for",
 ]

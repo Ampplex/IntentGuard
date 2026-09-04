@@ -44,6 +44,7 @@ DEFAULT_MAX_ROUNDS = 6
 
 class Ending(StrEnum):
     ACCEPTED_AT_TARGET = "accepted_at_target"
+    UNUSABLE_QUOTE = "unusable_quote"
     ACCEPTED_WITHIN_CEILING = "accepted_within_ceiling"
     STALLED = "stalled"
     ROUNDS_EXHAUSTED = "rounds_exhausted"
@@ -79,8 +80,43 @@ class Negotiation(StrictModel):
 
 
 def target_for(ceiling_paise: int, target_bps: int = DEFAULT_TARGET_BPS) -> int:
-    """The figure the buyer aims at. Integer arithmetic, no floats in the money path."""
+    """The figure the buyer aims at. Integer arithmetic, no floats in the money path.
+
+    Basis points above ten thousand would put the target above the ceiling, which
+    would have the buyer opening a negotiation above what the user authorized and
+    defeat the reason a target exists at all. Refused loudly rather than clamped,
+    because a clamp hides a configuration mistake.
+    """
+    if not 1 <= target_bps <= BPS:
+        raise ValueError(
+            f"target_bps must be between 1 and {BPS}; {target_bps} would aim at or above "
+            "the ceiling the target exists to stay under"
+        )
     return ceiling_paise * target_bps // BPS
+
+
+def stated_total(payload: object) -> int | None:
+    """The merchant's declared total, only when it is genuinely an integer.
+
+    Everything the buyer reads here was written by an untrusted party. Reaching
+    straight into the dictionary let a merchant end the negotiation with a
+    KeyError or a TypeError by sending a missing, null or non-numeric total,
+    which is a denial of service against the user's own agent rather than a
+    negotiating position.
+
+    Returning None instead means the buyer cannot reason about the quote. It
+    does not mean the quote is refused: the payload still travels on to the
+    gate, which is the thing entitled to judge it.
+    """
+    if not isinstance(payload, dict):
+        return None
+    total = payload.get("total_paise")
+    if isinstance(total, bool) or not isinstance(total, int):
+        return None
+    items = payload.get("line_items")
+    if not isinstance(items, list) or not items:
+        return None
+    return total
 
 
 class BuyerAgent:
@@ -116,10 +152,16 @@ class BuyerAgent:
         rounds: list[Round] = []
         ceiling = self.ledger.hard.max_total_paise
 
+        quoted = stated_total(payload)
+        if quoted is None:
+            return Negotiation(
+                ending=Ending.UNUSABLE_QUOTE,
+                final_payload=payload,
+                target_paise=self.target_paise,
+            )
+
         # Bounded on purpose. Nothing the merchant returns can extend this.
         for number in range(1, self.max_rounds + 1):
-            quoted = payload["total_paise"]
-
             if quoted <= self.target_paise:
                 rounds.append(
                     Round(number=number, quoted_total_paise=quoted, note="at or under target")
@@ -141,12 +183,18 @@ class BuyerAgent:
                 )
             )
             revised = merchant.counter(view, payload, self.target_paise)
-            conceded = quoted - revised["total_paise"]
+            revised_total = stated_total(revised)
 
+            if revised_total is None:
+                # A counter nobody can read is not a concession. Keep the last
+                # quote that made sense and let the gate judge that one.
+                return self._settle(Ending.STALLED, rounds, payload, ceiling)
+
+            conceded = quoted - revised_total
             if conceded < self.min_concession_paise:
                 # Not moving, or moving backwards. Take it if it fits, else stop.
                 return self._settle(Ending.STALLED, rounds, payload, ceiling)
-            payload = revised
+            payload, quoted = revised, revised_total
 
         return self._settle(Ending.ROUNDS_EXHAUSTED, rounds, payload, ceiling)
 
@@ -164,15 +212,19 @@ class BuyerAgent:
         # The last concession arrives after the final round's counter, so without
         # this the log ends one quote before the one actually accepted, and the
         # audit trail would not contain the figure the decision was made on.
+        final_total = stated_total(payload)
+        if final_total is None:
+            return Negotiation(
+                ending=Ending.UNUSABLE_QUOTE,
+                rounds=rounds,
+                final_payload=payload,
+                target_paise=self.target_paise,
+            )
         rounds = [
             *rounds,
-            Round(
-                number=len(rounds) + 1,
-                quoted_total_paise=payload["total_paise"],
-                note="final offer",
-            ),
+            Round(number=len(rounds) + 1, quoted_total_paise=final_total, note="final offer"),
         ]
-        within = payload["total_paise"] <= ceiling
+        within = final_total <= ceiling
         return Negotiation(
             ending=Ending.ACCEPTED_WITHIN_CEILING if within else ending,
             rounds=rounds,
