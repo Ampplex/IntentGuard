@@ -403,6 +403,12 @@ def check_confidence(ledger: IntentLedger, threshold: float) -> list[Violation]:
     The threshold is an argument rather than a constant so that recalibrating it
     is a change to data, not to the engine.
     """
+    if ledger.human_confirmed:
+        # Already asked and already answered. Asking again is not caution, it is
+        # a loop: a confirmed mandate kept raising this forever, so the
+        # escalation path could never complete.
+        return []
+
     weak = sorted(
         name
         for name, score in ledger.confidence.items()

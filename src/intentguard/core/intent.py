@@ -100,6 +100,14 @@ class IntentLedger(StrictModel):
     created_at: datetime
     ttl_seconds: int = Field(default=3600, ge=0)
 
+    # Set when a person was shown the extracted reading and confirmed it. It
+    # supersedes the confidence scores rather than overwriting them: the
+    # extractor's own assessment stays on the record for calibration, and the
+    # engine stops asking about a question that has already been answered.
+    # Without this a confirmed mandate kept raising LOW_CONFIDENCE forever and
+    # the escalation could never resolve.
+    human_confirmed: bool = False
+
     @model_validator(mode="after")
     def _confidence_keys_are_constraint_fields(self) -> IntentLedger:
         known = set(HardConstraints.model_fields) | set(SoftPreferences.model_fields)

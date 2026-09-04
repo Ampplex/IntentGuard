@@ -160,11 +160,21 @@ def confirm(ledger: IntentLedger, *, now: datetime, ttl_seconds: int | None = No
     TTL restarts rather than resuming, because the time a person spent deciding
     is not time the authorization was live. Expiring a transaction someone was
     mid-approval of is a bad product and a worse demo.
+
+    The mandate is also marked human_confirmed, which supersedes the confidence
+    scores without erasing them: the extractor's own assessment stays on the
+    record for calibration, and the engine stops asking a question that has
+    already been answered.
     """
     return ledger.model_copy(
         update={
             "status": LedgerStatus.ACTIVE,
             "created_at": now,
             "ttl_seconds": ttl_seconds if ttl_seconds is not None else ledger.ttl_seconds,
+            # A person has now vouched for the reading, which supersedes whatever
+            # the extractor thought of it. Without this the mandate kept raising
+            # LOW_CONFIDENCE after being confirmed and the escalation could never
+            # complete.
+            "human_confirmed": True,
         }
     )
