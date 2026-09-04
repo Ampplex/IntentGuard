@@ -49,6 +49,11 @@ def _compare(
     merchant said nothing about: silence is not a mismatch, and counting it as
     one would make every sparse offer look worse than a wrong one.
     """
+    # Stripped before testing for presence. A merchant sending a field of spaces
+    # was counted as a mismatch and scored full drift, which reads as "they got
+    # the brand wrong" when they simply said nothing.
+    wanted = (wanted or "").strip()
+    offered = (offered or "").strip()
     if not wanted or not offered:
         return None
     if scorer.score(wanted, offered) >= MATCH_THRESHOLD:
@@ -82,7 +87,7 @@ def score_drift(
             ("colour", soft.colour),
             ("delivery_speed", soft.delivery_speed),
         )
-        if value
+        if value and value.strip()
     )
     missed = sum(item.weight for item in items)
     score = missed / expressed if expressed else 0.0

@@ -147,3 +147,49 @@ def test_a_custom_similarity_can_be_supplied() -> None:
             return 0.0
 
     assert assess_substitution("a shoe", "a shoe", similarity=AlwaysDifferent())
+
+
+# --- what an untrusted merchant controls ----------------------------------
+
+
+def test_a_very_long_description_cannot_inflate_gate_latency() -> None:
+    """Product text comes from the merchant and nothing upstream bounds it.
+
+    A two hundred thousand word title took twenty-three milliseconds to score,
+    against a whole-decision budget measured in microseconds. No real product
+    name approaches the cap.
+    """
+    import time
+
+    huge = "word " * 200_000
+    started = time.perf_counter()
+    product_match_score("Asics Gel-Contend 9", huge)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    assert elapsed_ms < 5.0, f"scoring took {elapsed_ms:.1f} ms"
+
+
+def test_padding_with_the_agreed_name_does_not_hide_a_swap() -> None:
+    """Repeating the agreed name around a different product is still caught."""
+    for delivered in (
+        "Asics Gel-Contend 9 Nike Revolution 7",
+        "asics gel contend 9 -- actually Nike Revolution 7",
+        "Asics Gel Contend 9 " * 20 + "Nike Revolution 7",
+    ):
+        assert assess_substitution("Asics Gel-Contend 9", delivered), delivered
+
+
+def test_a_known_evasion_that_this_measure_cannot_see() -> None:
+    """Pinned so it stays visible rather than being discovered by a reviewer.
+
+    Appending another product's name without any digit keeps coverage at one,
+    because everything agreed really is still in the text. Telling that apart
+    from honest elaboration needs to know which added words name a product,
+    which word overlap does not. The embedding path is the intended answer and
+    is untested against a real model.
+
+    If this ever starts failing, the measure improved and the test should be
+    turned into a positive one.
+    """
+    evasion = "Asics Gel-Contend 9 replacement, Nike Revolution"
+    assert product_match_score("Asics Gel-Contend 9", evasion) == 1.0
+    assert assess_substitution("Asics Gel-Contend 9", evasion) == []

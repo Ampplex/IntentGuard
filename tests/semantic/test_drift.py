@@ -92,3 +92,24 @@ def test_the_score_is_bounded() -> None:
     ledger = ledger_wanting(brand="Asics", colour="blue", delivery_speed="express")
     offer = offer_with(brand="Nike", colour="black")
     assert 0.0 <= score_drift(ledger, offer).score <= 1.0
+
+
+def test_a_field_of_spaces_is_silence_rather_than_a_mismatch() -> None:
+    """A merchant sending whitespace was scored as getting the brand wrong."""
+    report = score_drift(ledger_wanting(brand="Asics"), offer_with(brand="   "))
+    assert report.items == []
+    assert report.score == 0.0
+
+
+def test_a_preference_of_only_spaces_is_not_an_expressed_preference() -> None:
+    report = score_drift(ledger_wanting(brand="  "), offer_with(brand="Nike"))
+    assert report.items == []
+    assert report.score == 0.0
+
+
+def test_a_very_long_brand_string_does_not_stall_the_gate() -> None:
+    import time
+
+    started = time.perf_counter()
+    score_drift(ledger_wanting(brand="Asics"), offer_with(brand="Asics" * 100_000))
+    assert (time.perf_counter() - started) * 1000 < 5.0

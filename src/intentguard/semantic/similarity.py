@@ -23,6 +23,13 @@ from typing import Any, Protocol
 
 _TOKENS = re.compile(r"[a-z0-9]+")
 
+# Product descriptions come from an untrusted merchant and nothing upstream
+# bounds their length. A two hundred thousand word title took twenty-three
+# milliseconds to score, against a whole-decision budget measured in
+# microseconds, so a merchant could inflate gate latency by six orders of
+# magnitude with a long string. No real product name approaches this.
+MAX_DESCRIPTION_CHARS = 2_000
+
 # Words that carry no information about which product this is.
 STOPWORDS = frozenset(
     {"the", "a", "an", "of", "for", "with", "and", "new", "pack", "size", "pair", "set"}
@@ -30,11 +37,12 @@ STOPWORDS = frozenset(
 
 
 def tokens(text: str) -> set[str]:
-    return {t for t in _TOKENS.findall(text.lower()) if t not in STOPWORDS}
+    clipped = text[:MAX_DESCRIPTION_CHARS].lower()
+    return {t for t in _TOKENS.findall(clipped) if t not in STOPWORDS}
 
 
 def bigrams(text: str) -> set[str]:
-    flat = "".join(_TOKENS.findall(text.lower()))
+    flat = "".join(_TOKENS.findall(text[:MAX_DESCRIPTION_CHARS].lower()))
     return {flat[i : i + 2] for i in range(len(flat) - 1)}
 
 
