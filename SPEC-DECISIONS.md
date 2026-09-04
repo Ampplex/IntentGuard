@@ -298,3 +298,94 @@ belongs with substitution matching in `semantic/` at stage 7, and the honest
 description of the current check is that it verifies the merchant's own
 declaration is consistent with the mandate, not that the product is what the
 merchant says it is.
+
+---
+
+# Amendment 3 — external review, corrections and positioning
+
+An external review of the HLD converged with the internal audit on the two known
+weaknesses, which is reassuring, and raised one contradiction the internal audit
+had missed. It also contained two claims about this system that are wrong, and
+those are corrected here so a demo does not get built on them.
+
+## The contradiction: a probabilistic score must not block
+
+The review classified product similarity as "advisory". The specification does
+not: `PRODUCT_SUBSTITUTION` sits in the blocking set, and substitution detection
+is planned as embedding similarity. Those cannot both stand. CLAUDE.md says drift
+never blocks precisely because a probabilistic score gating a payment is the
+thing this project exists to argue against, and an embedding threshold is exactly
+such a score wearing a different name.
+
+Resolved by splitting the signal by how it is computed, not by what it is about:
+
+- **Deterministic identity mismatch blocks.** Where the mandate pins the agreed
+  product and the offer carries a different one, that is an exact comparison with
+  no model in it, and it raises `PRODUCT_SUBSTITUTION`.
+- **Similarity-based suspicion escalates and never blocks.** Where nothing is
+  pinned and only an embedding distance suggests a swap, the honest outcome is
+  that the system cannot decide, so it asks.
+
+This keeps `semantic/` advisory to an escalation rather than authoritative over a
+payment, and it holds the invariant that no probabilistic number can move money.
+It also confirms the schema gap: the blocking half needs a field on
+`HardConstraints` naming the agreed product, which does not exist yet.
+
+## Correction 1: the review's escalation scenario does not escalate
+
+The review proposes demonstrating ESCALATE with "buy a laptop under 70k" answered
+by a refurbished MacBook at 62k. Run against the engine, that scenario produces:
+
+    mandate silent on condition          ALLOW     no violations
+    mandate says new                     BLOCK     CONDITION_MISMATCH
+    merchant writes an unknown condition ESCALATE  UNCLASSIFIABLE_CONDITION
+
+Refurbished is a recognised member of the condition enum, so it is a definite
+mismatch rather than an uncertainty. Escalation on condition requires a string
+the enum cannot rank at all.
+
+The correct escalation demo is the failure the problem statement itself names:
+an instruction the extractor cannot turn into a defensible ceiling, such as "get
+me a decent laptop, nothing too pricey". That is `gold_065`, and it is the
+failure the track asks to see handled gracefully.
+
+## Correction 2: the engine returning no decision
+
+Checking the review's scenario surfaced a real defect. A mandate built through
+`model_copy` skips validation and can hold a plain string where the annotation
+says enum; the engine reached for `.value` on it and raised `AttributeError`.
+
+A raised exception is not a safe failure. It returns no decision at all, which is
+strictly worse than a wrong one, because a caller holding no decision has nothing
+to refuse on. The engine now coerces through the enum and a regression test
+asserts it returns one of the three outcomes rather than raising.
+
+## Metric added: authorized transaction completion rate
+
+    legitimate authorized transactions allowed
+    -----------------------------------------
+    legitimate authorized transactions
+
+Already implied by the existing headline metrics, now named as a single ratio
+because it states the danger directly. The risk is not only missing a violation.
+It is blocking legitimate commerce, which is a revenue number rather than a
+safety number, and it is the one that connects this system to a merchant's
+interest in deploying it.
+
+## Positioning
+
+The AP2 paragraph is rescoped. "AP2 does not specify who checks the cart" invites
+the reply that Razorpay already ships agentic payments with spending limits and
+granular controls. The defensible framing is narrower: AP2 establishes delegated
+authorization and mandate provenance, and what stays open is transaction-level
+evaluation of a dynamically generated, negotiated cart against the constraints
+the mandate represents. The pitch is not that anyone forgot authorization. It is
+that delegated commerce becomes dynamic, and a dynamic cart needs enforcement at
+the transaction rather than at the credential.
+
+## Scope
+
+The review's strongest advice is to add nothing. Agreed and recorded: no voice,
+no recommendations, no reputation scoring, no fraud detection, no third agent.
+The remaining work is finishing stages 4 to 9 and proving the security properties
+experimentally, starting with making the injection experiment non-vacuous.

@@ -112,3 +112,19 @@ def test_every_explanation_the_engine_produces_is_complete() -> None:
     assert result.violations
     for violation in result.violations:
         assert "None" not in violation.explanation, violation.code
+
+
+def test_the_engine_returns_a_decision_rather_than_raising() -> None:
+    """A ledger built by model_copy skips validation and can hold plain strings.
+
+    pydantic re-validates on model_validate and not on model_copy, so an
+    internally constructed mandate can carry a str where the annotation says
+    enum. The engine used to raise AttributeError reaching for .value on it,
+    which returns no decision at all -- strictly worse than any wrong answer,
+    because a caller with no decision has nothing to refuse on.
+    """
+    ledger = a_ledger()
+    hard = ledger.hard.model_copy(update={"category": "electronics"})
+    result = evaluate(ledger.model_copy(update={"hard": hard}), an_offer(), now=NOW)
+    assert result.outcome in {Outcome.ALLOW, Outcome.BLOCK, Outcome.ESCALATE}
+    assert ViolationCode.CATEGORY_MISMATCH in codes(result)

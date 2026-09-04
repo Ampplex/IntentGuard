@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from ..core.decision import Violation
-from ..core.enums import LedgerStatus, LineItemKind, Outcome, QuantityMode
+from ..core.enums import Category, Condition, LedgerStatus, LineItemKind, Outcome, QuantityMode
 from ..core.intent import IntentLedger
 from ..core.money import format_paise, sum_paise
 from ..core.offer import LineItem, Offer
@@ -273,7 +273,7 @@ def check_condition(ledger: IntentLedger, offer: Offer) -> list[Violation]:
             _violation(
                 ViolationCode.CONDITION_MISMATCH,
                 field="condition",
-                expected=wanted.value,
+                expected=Condition(wanted).value,
                 observed=offered.value,
             )
         ]
@@ -291,12 +291,12 @@ def check_category(ledger: IntentLedger, offer: Offer) -> list[Violation]:
                 observed=raw if raw else "nothing at all",
             )
         ]
-    if offered is not ledger.hard.category:
+    if offered is not Category(ledger.hard.category):
         return [
             _violation(
                 ViolationCode.CATEGORY_MISMATCH,
                 field="category",
-                expected=ledger.hard.category.value,
+                expected=Category(ledger.hard.category).value,
                 observed=offered.value,
             )
         ]
