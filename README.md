@@ -41,17 +41,26 @@ as drift and never acted on. That is Track 02's problem.
 
 ```
 src/intentguard/
-  core/            schemas, money helpers, the frozen violation codes. No logic.
-  policy/          the deterministic engine. Imports core/ and nothing else.
-data/gold/
-  author.py        hand-authored cases. Cannot import intentguard, and a test enforces it.
-  cases.json       the 100 labelled cases
-  REVIEW.md        the same cases rendered for review by eye
+  core/       schemas, money helpers, the twenty-one violation codes. No logic.
+  policy/     the deterministic engine. Imports core/ and nothing else.
+  ledger/     extraction, confidence scoring, mandate building.
+  merchant/   untrusted: catalog, bounded view, quoting, hostile modes.
+  gate/       orchestration, the untrusted wire boundary, timing, audit write.
+  audit/      the tamper-evident decision trail.
+  metrics/    measurement. Cannot import policy/, does no file I/O.
+data/
+  gold/       100 hand-labelled cases, held out. Cannot import intentguard.
+  dev/        60-case confidence calibration set. Same import ban.
 tests/
-  core/            schemas, money, hashing, the no-float invariant
-  policy/          one test per violation code the engine can raise
-  gold/            the gold set is well formed and internally consistent
-  structure/       the import graph and clock gates
+  core/       schemas, money, hashing, the no-float invariant
+  policy/     one test per violation code, the threat table, regressions
+  ledger/     extraction, calibration, injection reaching the extractor
+  merchant/   the bounded-view gate, hostile quotes over the wire
+  gate/       decision assembly, the boundary, receipts
+  audit/      chain integrity and tamper detection
+  metrics/    checked against hand-computed answers
+  gold/       the gold set is well formed and internally consistent
+  structure/  import graph, clock reads, orphan codes, dataset independence
 ```
 
 ## Running it
@@ -59,20 +68,31 @@ tests/
 ```
 uv venv --python 3.12 .venv
 uv pip install -e ".[dev]"
-.venv/bin/python -m pytest          # 597 tests
+.venv/bin/python -m pytest          # the full suite
 .venv/bin/python -m ruff check .
 .venv/bin/python data/gold/author.py    # regenerate the gold artifacts
+.venv/bin/python data/dev/author.py     # regenerate the calibration set
 ```
 
 ## Status
 
-Stages 1 to 3 of 12 complete. See the build order table in CLAUDE.md.
+Stages 1 to 5 of 12 complete. See the build order table in CLAUDE.md.
 
 | Stage | Gate | State |
 |---|---|---|
 | 1. `core/` schemas and money | Round-trip tests, no float in the money path | passing |
 | 2. `policy/` engine | Import graph gate, a test per violation code | passing |
 | 3. Gold set, 100 hand-labelled | Exists, labelled without running the engine | passing |
+| 4. `ledger/` extraction and confidence | Confidence correlates with correctness | passing |
+| 5. `merchant/` and bounded view | No ceiling in the serialised merchant view | passing |
+
+Audit and metrics are built rather than deferred, because the track's bar asks
+to see an audit trail and a graceful failure, and both sat near the end of the
+original plan.
+
+Extraction runs without an API key: the rule-based extractor is a real fallback,
+not a mock. Set `ANTHROPIC_API_KEY` and install the `llm` extra to use the
+model-backed path, which is wired but untested against a live model.
 
 The gold labels are held out. Nothing is tuned against them and they have not
 been scored. Thresholds get derived from the synthetic set at stage 9.

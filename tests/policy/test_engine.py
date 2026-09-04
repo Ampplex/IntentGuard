@@ -22,11 +22,13 @@ NOW = CREATED_AT + timedelta(minutes=5)
 # Codes the deterministic engine cannot produce, and who owns each. Asserted so
 # that "a test per violation code" cannot be satisfied by quietly narrowing the
 # engine's remit.
+# LOW_CONFIDENCE left this list once check_confidence existed: comparing scores
+# already stored on the mandate against an injected threshold is arithmetic, and
+# no model runs to do it.
 # PRODUCT_SUBSTITUTION left this list at Amendment 3. Blocking on it is an exact
 # comparison against a pinned product_ref with no model in it. The similarity
 # half of substitution stays with semantic/ and escalates rather than blocks.
 NOT_POLICYS_TO_RAISE = {
-    ViolationCode.LOW_CONFIDENCE: "ledger/ at stage 4",
     ViolationCode.UNMODELLED_FIELD: "gate/, translated from a parse failure",
     ViolationCode.OFFER_MALFORMED: "gate/, translated from a parse failure",
 }

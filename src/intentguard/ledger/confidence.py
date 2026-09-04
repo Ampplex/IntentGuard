@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import re
 
+from ..core.violations import CONFIDENCE_THRESHOLD
+
 # Words that promise imprecision. Their presence near a field is evidence the
 # field cannot be extracted defensibly, whatever the model reports.
 VAGUE_TERMS = (
@@ -82,8 +84,9 @@ PENALTY_UNMARKED_MULTI_UNIT = 0.45
 PENALTY_HEDGED_QUANTITY = 0.5
 PENALTY_COMPETING_AMOUNTS = 0.6
 
-# Invented in the specification and treated as such until data says otherwise.
-DEFAULT_THRESHOLD = 0.85
+# Single definition in core/, calibrated here. See test_calibration.py for what
+# the data actually supports, which is a floor rather than this exact value.
+DEFAULT_THRESHOLD = CONFIDENCE_THRESHOLD
 
 
 # Matched on word boundaries, not as substrings. "refurbished" contains "ish",
@@ -147,8 +150,20 @@ def score_ceiling(
 
 
 def score_quantity(instruction: str, quantity: int | None) -> float:
+    """How much to trust the quantity, including when none was given.
+
+    Three cases, and conflating the last two was a bug. A stated number is
+    trustworthy. A hedged number -- "a few notebooks" -- is not, and the hedge is
+    in the instruction whether or not a digit came out of it. But an instruction
+    that simply does not mention quantity is not uncertain: "buy me a pair of
+    running shoes" means one, and defaulting to one there is a confident reading
+    rather than a guess.
+
+    Scoring the unstated case as zero made every ordinary single-item mandate
+    escalate on confidence.
+    """
     if quantity is None:
-        return 0.0
+        return 0.0 if _HEDGED_QUANTITY.search(instruction) else 1.0
     score = 1.0
     if _HEDGED_QUANTITY.search(instruction):
         score -= PENALTY_HEDGED_QUANTITY
@@ -182,9 +197,3 @@ def score_extraction(instruction: str, extracted) -> dict[str, float]:
         "product_ref": score_stated(extracted.product_ref),
         "exclusions": score_stated(extracted.exclusions),
     }
-
-
-def weakest_field(confidence: dict[str, float], required: tuple[str, ...]) -> tuple[str, float]:
-    """The field that decides whether the mandate is usable."""
-    scored = [(name, confidence.get(name, 0.0)) for name in required]
-    return min(scored, key=lambda pair: pair[1])

@@ -18,11 +18,13 @@ from .enums import (
     QuantityMode,
     RecurrenceInterval,
 )
-from .hashing import canonical_json, content_hash, offer_hash
+from .hashing import canonical_json, content_hash, offer_hash, payload_hash
 from .intent import ConfidenceField, HardConstraints, IntentLedger, SoftPreferences
 from .money import PAISE_PER_RUPEE, format_paise, from_rupees, parse_rupees, sum_paise
 from .offer import EmiTerms, LineItem, Offer, Product, RecurringCharge
 from .violations import (
+    CONFIDENCE_GATED_FIELDS,
+    CONFIDENCE_THRESHOLD,
     DEFAULT_OUTCOME,
     ESCALATING_CODES,
     EXPLANATION_TEMPLATES,
@@ -31,6 +33,8 @@ from .violations import (
 )
 
 __all__ = [
+    "CONFIDENCE_GATED_FIELDS",
+    "CONFIDENCE_THRESHOLD",
     "DEFAULT_OUTCOME",
     "ESCALATING_CODES",
     "EXPLANATION_TEMPLATES",
@@ -65,6 +69,7 @@ __all__ = [
     "format_paise",
     "from_rupees",
     "offer_hash",
+    "payload_hash",
     "parse_rupees",
     "sum_paise",
 ]

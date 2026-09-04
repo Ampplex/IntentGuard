@@ -233,3 +233,38 @@ def test_the_merchant_never_reads_the_ceiling(path: Path) -> None:
 
 def test_the_merchant_walker_found_files() -> None:
     assert _merchant_files()
+
+
+def test_every_violation_code_has_something_that_raises_it() -> None:
+    """A code nobody raises is a claim in a table with no behaviour behind it.
+
+    This found three at the point it was written: OFFER_MALFORMED and
+    UNMODELLED_FIELD had no producer because nothing accepted a raw wire payload,
+    and LOW_CONFIDENCE had none because no check read the stored scores. All
+    three were live gaps rather than spare vocabulary.
+    """
+    from intentguard.core import ViolationCode
+
+    sources = {
+        path: path.read_text(encoding="utf-8")
+        for path in SRC.rglob("*.py")
+        if path.name != "violations.py"
+    }
+    orphans = [
+        code.name
+        for code in ViolationCode
+        if not any(f"ViolationCode.{code.name}" in text for text in sources.values())
+    ]
+    assert not orphans, f"codes defined but never raised: {orphans}"
+
+
+def test_no_module_defines_the_confidence_threshold_twice() -> None:
+    """One number, one home. Two copies drift and nobody notices which is live."""
+    literal = "0.85"
+    defining = [
+        path.name
+        for path in SRC.rglob("*.py")
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if literal in line and "=" in line and not line.strip().startswith("#")
+    ]
+    assert defining == ["violations.py"], f"threshold defined in {defining}"

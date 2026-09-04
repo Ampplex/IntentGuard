@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from ..core.violations import CONFIDENCE_GATED_FIELDS
 from .confidence import DEFAULT_THRESHOLD, score_extraction
 from .schema import ExtractedIntent
 
@@ -91,10 +92,14 @@ class ClaudeExtractor:
         if self.samples_when_doubtful < 2:
             return first
 
+        # Only fields that can gate a decision justify the extra calls. An absent
+        # condition or an absent brand scores zero because nothing was stated, not
+        # because the reading was shaky, and resampling on those tripled the cost
+        # of every ordinary instruction.
         doubtful = [
             field
             for field, score in score_extraction(instruction, first).items()
-            if score < self.threshold
+            if field in CONFIDENCE_GATED_FIELDS and score < self.threshold
         ]
         if not doubtful:
             return first

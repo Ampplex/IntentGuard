@@ -32,6 +32,19 @@ def content_hash(model: BaseModel) -> str:
     return f"{HASH_PREFIX}:{digest}"
 
 
+def payload_hash(payload: dict) -> str:
+    """Hash a raw wire payload, for offers that never became a model.
+
+    An offer rejected at the boundary still has to be identifiable afterwards.
+    "We refused something" is not an audit trail; "we refused this exact
+    document, here is its hash" is.
+    """
+    text = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
+    return f"{HASH_PREFIX}:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def offer_hash(offer: BaseModel) -> str:
     """The offer's identity in the audit trail and half of the idempotency key.
 

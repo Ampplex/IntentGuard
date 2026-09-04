@@ -19,7 +19,12 @@ from ..core.enums import Category, Condition, LedgerStatus, LineItemKind, Outcom
 from ..core.intent import IntentLedger
 from ..core.money import format_paise, sum_paise
 from ..core.offer import LineItem, Offer
-from ..core.violations import DEFAULT_OUTCOME, ViolationCode, explain
+from ..core.violations import (
+    CONFIDENCE_GATED_FIELDS,
+    DEFAULT_OUTCOME,
+    ViolationCode,
+    explain,
+)
 from .normalise import to_category, to_condition
 
 
@@ -388,6 +393,33 @@ def check_product_identity(ledger: IntentLedger, offer: Offer) -> list[Violation
     ]
 
 
+def check_confidence(ledger: IntentLedger, threshold: float) -> list[Violation]:
+    """Was the instruction read well enough to spend against?
+
+    A deterministic comparison of numbers already stored on the mandate against
+    a threshold passed in. No model runs here and none is consulted; the score
+    was computed when the mandate was built, and this only reads it.
+
+    The threshold is an argument rather than a constant so that recalibrating it
+    is a change to data, not to the engine.
+    """
+    weak = sorted(
+        name
+        for name, score in ledger.confidence.items()
+        if name in CONFIDENCE_GATED_FIELDS and score < threshold
+    )
+    if not weak:
+        return []
+    described = ", ".join(name.replace("_paise", "").replace("_", " ") for name in weak)
+    return [
+        _violation(
+            ViolationCode.LOW_CONFIDENCE,
+            field="confidence",
+            observed=f"the {described} could not be read from your instruction with confidence",
+        )
+    ]
+
+
 def check_mandate_feasibility(ledger: IntentLedger) -> list[Violation]:
     """Does the mandate contradict itself, before any offer is even considered?
 
@@ -435,6 +467,7 @@ def check_mandate_feasibility(ledger: IntentLedger) -> list[Violation]:
 CHECKS_PERFORMED = (
     "mandate_state",
     "mandate_feasibility",
+    "confidence",
     "currency",
     "totals",
     "quantity",

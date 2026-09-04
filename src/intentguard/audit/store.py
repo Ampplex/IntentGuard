@@ -12,7 +12,6 @@ and an append-only file alone cannot answer that.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -63,8 +62,3 @@ class AuditLog:
                 return record.sequence
             expected_previous = content_hash(record)
         return None
-
-
-def receipt_json(model) -> str:
-    """Canonical text a merchant can store and re-verify later."""
-    return json.dumps(json.loads(model.model_dump_json()), sort_keys=True, indent=2)

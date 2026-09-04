@@ -6,6 +6,7 @@ Imports nothing but core/. No model client, no database, no clock.
 from .checks import (
     CHECKS_PERFORMED,
     chargeable_total,
+    check_confidence,
     check_exclusions,
     check_mandate_feasibility,
     check_product_identity,
@@ -17,6 +18,7 @@ from .normalise import to_category, to_condition
 __all__ = [
     "CHECKS_PERFORMED",
     "chargeable_total",
+    "check_confidence",
     "check_exclusions",
     "check_mandate_feasibility",
     "check_product_identity",

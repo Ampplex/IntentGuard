@@ -42,6 +42,17 @@ class ViolationCode(StrEnum):
     UNCLASSIFIABLE_CATEGORY = "UNCLASSIFIABLE_CATEGORY"
 
 
+# Calibrated against data/dev/calibration.json, not invented here. It lives in
+# core/ so that policy/ and ledger/ read the same number without importing each
+# other, which the import gate forbids.
+CONFIDENCE_THRESHOLD = 0.85
+
+# Only constraints that can move money are gated on confidence. A shaky read of
+# a colour preference is drift; an absent condition is simply an absent
+# condition, not a doubtful one. Conflating unstated with uncertain made every
+# ordinary instruction look doubtful.
+CONFIDENCE_GATED_FIELDS = frozenset({"max_total_paise", "category", "quantity"})
+
 ESCALATING_CODES = frozenset(
     {
         ViolationCode.UNMODELLED_FIELD,
