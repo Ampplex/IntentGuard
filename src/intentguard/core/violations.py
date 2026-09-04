@@ -11,6 +11,7 @@ implemented.
 from __future__ import annotations
 
 from enum import StrEnum
+from string import Formatter
 from types import MappingProxyType
 
 from .enums import Outcome
@@ -138,5 +139,17 @@ EXPLANATION_TEMPLATES = MappingProxyType(
 def explain(
     code: ViolationCode, *, expected: str | None = None, observed: str | None = None
 ) -> str:
-    """Fill a violation's template. Formatting, not judgement."""
-    return EXPLANATION_TEMPLATES[code].format(expected=expected, observed=observed)
+    """Fill a violation's template. Formatting, not judgement.
+
+    Refuses to render a placeholder it was not given a value for. str.format
+    would happily print the word None into a sentence a person reads while
+    deciding whether they are about to lose money, and a half-written
+    explanation is worse than a missing one because it looks finished.
+    """
+    template = EXPLANATION_TEMPLATES[code]
+    supplied = {"expected": expected, "observed": observed}
+    needed = {name for _, name, _, _ in Formatter().parse(template) if name}
+    missing = sorted(name for name in needed if supplied.get(name) is None)
+    if missing:
+        raise ValueError(f"{code.value} explanation needs {missing} and was not given them")
+    return template.format(**supplied)

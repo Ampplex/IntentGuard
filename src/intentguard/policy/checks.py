@@ -17,7 +17,7 @@ from ..core.decision import Violation
 from ..core.enums import LedgerStatus, LineItemKind, Outcome, QuantityMode
 from ..core.intent import IntentLedger
 from ..core.money import format_paise, sum_paise
-from ..core.offer import Offer
+from ..core.offer import LineItem, Offer
 from ..core.violations import DEFAULT_OUTCOME, ViolationCode, explain
 from .normalise import to_category, to_condition
 
@@ -54,21 +54,25 @@ def check_ledger_state(ledger: IntentLedger, now: datetime) -> list[Violation]:
     if status is LedgerStatus.AWAITING_CONFIRMATION:
         found.append(_violation(ViolationCode.LEDGER_NOT_CONFIRMED, field="status"))
 
-    if status is LedgerStatus.EXPIRED:
-        found.append(_violation(ViolationCode.LEDGER_EXPIRED, field="status"))
-    elif status is LedgerStatus.ACTIVE:
-        # TTL is paused while a human is being asked, so only a live mandate ages.
-        deadline = _as_utc(ledger.created_at) + timedelta(seconds=ledger.ttl_seconds)
-        moment = _as_utc(now)
-        if moment >= deadline:
-            found.append(
-                _violation(
-                    ViolationCode.LEDGER_EXPIRED,
-                    field="ttl_seconds",
-                    expected=deadline.isoformat(),
-                    observed=moment.isoformat(),
-                )
+    # The deadline is computable whichever way the mandate expired, and both
+    # paths need it: a person told their authorization has run out is owed the
+    # time it ran out at, not a sentence with a hole where the time should be.
+    deadline = _as_utc(ledger.created_at) + timedelta(seconds=ledger.ttl_seconds)
+    moment = _as_utc(now)
+
+    # TTL is paused while a human is being asked, so only a live mandate ages.
+    expired = status is LedgerStatus.EXPIRED or (
+        status is LedgerStatus.ACTIVE and moment >= deadline
+    )
+    if expired:
+        found.append(
+            _violation(
+                ViolationCode.LEDGER_EXPIRED,
+                field="ttl_seconds",
+                expected=deadline.isoformat(),
+                observed=moment.isoformat(),
             )
+        )
     return found
 
 
@@ -76,14 +80,23 @@ def check_ledger_state(ledger: IntentLedger, now: datetime) -> list[Violation]:
 
 
 def chargeable_total(offer: Offer) -> int:
-    """What the user actually ends up paying.
+    """What the user actually ends up paying, taken at its highest reading.
 
-    A financed offer is checked on the sum of its instalments, not the sticker
-    price: the authorization is about money leaving the account.
+    A financed offer is checked on the sum of its instalments, because interest
+    makes the real cost higher than the sticker price and the authorization is
+    about money leaving the account.
+
+    The maximum matters as much as the sum. Everything this function reads is
+    supplied by an untrusted merchant, so instalment terms are never allowed to
+    *lower* the figure the ceiling is checked against -- otherwise one instalment
+    of one paisa attached to a ninety thousand rupee cart would be compared
+    against the paisa. Untrusted input may raise the number under scrutiny. It
+    may never choose it.
     """
-    if offer.emi is not None:
-        return offer.emi.installment_paise * offer.emi.installment_count
-    return offer.total_paise
+    if offer.emi is None:
+        return offer.total_paise
+    financed = offer.emi.installment_paise * offer.emi.installment_count
+    return max(offer.total_paise, financed)
 
 
 def check_currency(ledger: IntentLedger, offer: Offer) -> list[Violation]:
@@ -101,7 +114,7 @@ def check_currency(ledger: IntentLedger, offer: Offer) -> list[Violation]:
     ]
 
 
-def check_totals(ledger: IntentLedger, offer: Offer) -> list[Violation]:
+def check_totals(ledger: IntentLedger, offer: Offer, checked: int) -> list[Violation]:
     found: list[Violation] = []
     line_sum = sum_paise(item.amount_paise for item in offer.line_items)
 
@@ -125,7 +138,6 @@ def check_totals(ledger: IntentLedger, offer: Offer) -> list[Violation]:
             )
         )
 
-    checked = chargeable_total(offer)
     if checked > ledger.hard.max_total_paise:
         found.append(
             _violation(
@@ -208,6 +220,17 @@ def check_emi(ledger: IntentLedger, offer: Offer) -> list[Violation]:
     ]
 
 
+def _addon_is_permitted(item: LineItem, ledger: IntentLedger) -> bool:
+    """The cost clause, stated as a clause rather than an early return.
+
+    Written this way so the shape of the rule survives contact with the other
+    two clauses. addons_allowed relaxes cost and nothing else; it must not
+    become a switch that skips add-on checking altogether.
+    """
+    costs_nothing = item.amount_paise == 0
+    return costs_nothing or ledger.hard.addons_allowed
+
+
 def check_addons(ledger: IntentLedger, offer: Offer) -> list[Violation]:
     """The cost clause of the add-on rule, one violation per offending add-on.
 
@@ -219,12 +242,11 @@ def check_addons(ledger: IntentLedger, offer: Offer) -> list[Violation]:
     comparison can make, so it is deferred to semantic/ at stage 7 rather than
     approximated here.
     """
-    if ledger.hard.addons_allowed:
-        return []
+    add_ons = [item for item in offer.line_items if item.kind is LineItemKind.ADDON]
     return [
         _violation(ViolationCode.ADDON_NOT_AUTHORIZED, field="line_items", observed=item.label)
-        for item in offer.line_items
-        if item.kind is LineItemKind.ADDON and item.amount_paise != 0
+        for item in add_ons
+        if not _addon_is_permitted(item, ledger)
     ]
 
 

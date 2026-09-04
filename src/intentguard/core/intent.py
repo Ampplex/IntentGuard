@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Generic, TypeVar
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from .base import StrictModel
 from .enums import Category, Condition, LedgerStatus, QuantityMode
@@ -42,6 +42,26 @@ class HardConstraints(StrictModel):
     category: Category
     max_total_paise: int = Field(ge=0)
     currency: str = "INR"
+
+    @field_validator("currency")
+    @classmethod
+    def _single_currency(cls, value: str) -> str:
+        """IntentGuard is INR only, and that is a decision rather than an oversight.
+
+        The currency field exists so a non-INR quote is an immediate block, never
+        so a mandate can be denominated in something else. A mandate carrying USD
+        would have made a USD offer pass the one check the spec calls immediate.
+        Normalise case, refuse anything else.
+        """
+        normalised = value.strip().upper()
+        if normalised != "INR":
+            raise ValueError(
+                f"IntentGuard is single-currency and settles in INR; got {value!r}. "
+                "The currency field exists to reject foreign quotes, not to denominate "
+                "a mandate."
+            )
+        return normalised
+
     quantity: int = Field(default=1, ge=1)
     quantity_mode: QuantityMode = QuantityMode.EXACT
     condition: Condition | None = None

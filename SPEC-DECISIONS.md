@@ -208,3 +208,93 @@ BLOCK or ESCALATE carrying none. This is logic in a package specified as having
 none, and it stays, because the alternative is an audit trail that can contain a
 record asserting two contradictory things at once. It validates the shape of a
 record rather than deciding anything, which is the distinction that matters.
+
+---
+
+# Amendment 2 — review of stages 1 to 3
+
+Written by Claude after re-reading the engine adversarially rather than
+running it. Three defects, one of them severe, plus two gaps that are not
+defects but should not be discovered by a judge first.
+
+## The rule that found them
+
+Every check was read with one question: *which values does an untrusted party
+control, and does any of them decide **which** number gets checked, rather than
+supplying a number that gets checked?*
+
+Untrusted input may raise the figure under scrutiny. It may never choose it.
+Supplying a value to a comparison is safe because the comparison still happens.
+Selecting which value is compared is not, because the ceiling is then enforced
+against a number the attacker picked.
+
+## Defect 1: instalment terms could lower the checked total (severe)
+
+`chargeable_total` replaced the offer total with the sum of instalments whenever
+an offer carried EMI terms. Both inputs come from the merchant.
+
+A merchant facing a mandate with `emi_allowed: true` could therefore attach one
+instalment of one paisa to a ninety thousand rupee cart. The ceiling check
+compared five thousand rupees against one paisa and returned ALLOW. The invariant
+that a payment over the ceiling never reaches the rail was fully defeated, and no
+existing test caught it because every EMI test used terms where the instalment
+sum was the larger number.
+
+Fixed by taking the maximum of the two rather than substituting one for the
+other. Interest still raises the checked figure, which was the point of the
+original rule; nothing can now lower it. `check_totals` also takes the figure as
+an argument instead of recomputing it, so the number the engine reports and the
+number it checks cannot drift apart.
+
+## Defect 2: a mandate could be denominated in a foreign currency
+
+`HardConstraints.currency` was an unvalidated string defaulting to INR. The
+system is single-currency by decision, and nothing enforced it. A mandate built
+with USD would have made a USD offer pass the currency check, which is the one
+check the specification calls an immediate block.
+
+Now validated on parse: case is normalised, anything but INR is refused with a
+message saying why the field exists. Note the honest boundary — pydantic
+validators run on `model_validate`, which is how untrusted data enters, and not
+on `model_copy`, which is internal construction. The invariant holds where
+attacker-controlled data crosses the line, which is the place that matters.
+
+## Defect 3: explanations could contain the word None
+
+`explain` filled unsupplied placeholders with `None` and rendered it verbatim
+into the sentence a person reads while deciding whether they are about to lose
+money. A half-written explanation is worse than a missing one because it looks
+finished.
+
+`explain` now refuses to render a template it was not given every value for.
+Adding that guard immediately surfaced a second live instance: a mandate already
+marked EXPIRED produced "Your authorization expired at None and this offer
+arrived at None." Both are fixed, and the guard is what found the second one.
+
+## Gap 1: the injection experiment is currently vacuous
+
+The planned headline is that running the benchmark with injections spliced into
+every description changes no decision. Today that result would be true by
+construction and worth nothing: `raw_description` is never read by anything.
+The engine decides on integers and enums, and no model is in the path at all.
+
+The claim only becomes evidence when injections are spliced into text that
+actually reaches a model — the user instruction the extractor parses at stage 4,
+and the product text the substitution matcher reads at stage 7. Until then the
+correct statement is the structural one: the description cannot move a decision
+because nothing reads it. That is a real property and it should be stated as
+such, not dressed up as an experimental result.
+
+## Gap 2: category is merchant-asserted and trivially spoofable
+
+`check_category` compares the mandate's category against a string the untrusted
+merchant supplies. A merchant selling a bluetooth speaker can simply write
+"footwear" and pass. The check catches honest mistakes and lazy hostility, not a
+merchant who reads the schema.
+
+This is not fixable inside `policy/`, because detecting that a product titled
+"Bluetooth speaker" is not footwear requires judgement about the title. It
+belongs with substitution matching in `semantic/` at stage 7, and the honest
+description of the current check is that it verifies the merchant's own
+declaration is consistent with the mandate, not that the product is what the
+merchant says it is.

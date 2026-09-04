@@ -29,10 +29,11 @@ def evaluate(ledger: IntentLedger, offer: Offer, *, now: datetime) -> PolicyResu
     ``now`` is a required argument and not a default, so that a caller cannot
     accidentally make the engine depend on when it happened to run.
     """
+    checked_total = checks.chargeable_total(offer)
     violations: list[Violation] = [
         *checks.check_ledger_state(ledger, now),
         *checks.check_currency(ledger, offer),
-        *checks.check_totals(ledger, offer),
+        *checks.check_totals(ledger, offer, checked_total),
         *checks.check_quantity(ledger, offer),
         *checks.check_recurrence(ledger, offer),
         *checks.check_emi(ledger, offer),
@@ -43,5 +44,5 @@ def evaluate(ledger: IntentLedger, offer: Offer, *, now: datetime) -> PolicyResu
     return PolicyResult(
         outcome=checks.outcome_for(violations),
         violations=violations,
-        checked_total_paise=checks.chargeable_total(offer),
+        checked_total_paise=checked_total,
     )
