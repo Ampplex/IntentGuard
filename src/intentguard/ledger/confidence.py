@@ -59,14 +59,20 @@ VAGUE_TERMS = (
 # A stated limit needs a number and a bound to be a limit at all.
 _HAS_DIGITS = re.compile(r"\d")
 _BOUND_WORDS = re.compile(
-    r"\b(under|below|less than|no more than|max|maximum|budget|within|up to|upto|at most)\b",
+    r"\b(under|below|less than|no more than|max|maximum|budget|within|up to|upto|at most"
+    r"|for both|for all|for the lot|for everything|absolute max)\b",
     re.IGNORECASE,
 )
 _PER_UNIT_MARKER = re.compile(r"\b(each|apiece|per\s+\w+|a\s?piece)\b", re.IGNORECASE)
-_TOTAL_MARKER = re.compile(r"\b(total|altogether|in total|for the lot|all in)\b", re.IGNORECASE)
+_TOTAL_MARKER = re.compile(
+    r"\b(total|altogether|in total|for the lot|all in|for both|for all|for everything)\b",
+    re.IGNORECASE,
+)
 _HEDGED_QUANTITY = re.compile(
     r"\b(a few|some|several|a couple|couple of|multiple)\b", re.IGNORECASE
 )
+# Any number of at least three digits reads as money in a shopping instruction.
+_MONEY_SHAPED = re.compile(r"\b\d[\d,]{2,}(?:\.\d{1,2})?\b")
 
 # Penalties, subtracted from a starting confidence of 1.0.
 PENALTY_VAGUE_NEARBY = 0.55
@@ -74,6 +80,7 @@ PENALTY_NO_BOUND_WORD = 0.25
 PENALTY_MISSING = 1.0
 PENALTY_UNMARKED_MULTI_UNIT = 0.45
 PENALTY_HEDGED_QUANTITY = 0.5
+PENALTY_COMPETING_AMOUNTS = 0.6
 
 # Invented in the specification and treated as such until data says otherwise.
 DEFAULT_THRESHOLD = 0.85
@@ -113,6 +120,13 @@ def score_ceiling(
         score -= PENALTY_NO_BOUND_WORD
     if vague_terms_in(instruction):
         score -= PENALTY_VAGUE_NEARBY
+
+    # Two different sums in one instruction is a choice the user has not made.
+    # "budget 15000, but 16000 is fine if it is 4K" has no single ceiling, and
+    # picking the first one silently authorizes the wrong number.
+    distinct = {m.group(0).replace(",", "") for m in _MONEY_SHAPED.finditer(instruction)}
+    if len(distinct) > 1:
+        score -= PENALTY_COMPETING_AMOUNTS
 
     # "3 shirts, budget 2000" is genuinely ambiguous to a human reader. Guessing
     # either way blocks a legitimate order or authorizes three times the intent.

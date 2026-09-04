@@ -168,6 +168,13 @@ _AMOUNT = re.compile(
     re.IGNORECASE,
 )
 _BARE_AMOUNT = re.compile(r"(?:rs\.?|inr|₹)\s*(\d(?:[\d,]*\d)?(?:\.\d{1,2})?)", re.IGNORECASE)
+# People put the bound after the number as often as before: "45000 max",
+# "900 for both". Reading only the prefix form loses ordinary instructions.
+_TRAILING_AMOUNT = re.compile(
+    r"(?:rs\.?|inr|₹)?\s*(\d(?:[\d,]*\d)?(?:\.\d{1,2})?)\s*"
+    r"(?:max(?:imum)?|budget|total|for (?:both|all|the lot|everything))\b",
+    re.IGNORECASE,
+)
 # Counts are small and never followed by a currency word.
 _QUANTITY_DIGIT = re.compile(
     r"\b(\d{1,3})\s+(?:pairs?\s+of\s+)?(?!rupees?\b|rs\b|inr\b)[a-z]", re.IGNORECASE
@@ -227,6 +234,14 @@ _EXCLUSION_STOPWORDS = frozenset(
         "else",
     }
 )
+# Only an explicit naming construction counts. "the Asics Gel-Contend 9" pins a
+# product; "a Nike running shoe" expresses a brand preference and must not,
+# because a pinned product blocks and a preference never does.
+_PRODUCT_REF = re.compile(
+    r"\bthe\s+((?:[A-Z][\w-]*|\d[\w-]*)(?:\s+(?:[A-Z][\w-]*|\d[\w-]*)){1,4})",
+)
+_BRAND = re.compile(r"\b(?:by|from)\s+([A-Z][\w-]+)|\b([A-Z][\w-]+)\s+(?:running|shoe)")
+
 _VAGUE = (
     "decent",
     "reasonable",
@@ -289,9 +304,9 @@ class RuleBasedExtractor:
             recurring_allowed=bool(_YES_RECURRING.search(text)) and not _NO_RECURRING.search(text),
             emi_allowed=bool(_YES_EMI.search(text)) and not _NO_EMI.search(text),
             addons_allowed=bool(_YES_ADDONS.search(text)),
-            product_ref=None,
+            product_ref=self._product_ref(text),
             exclusions=self._exclusions(text),
-            brand=None,
+            brand=self._brand(text),
             colour=None,
             delivery_speed=None,
             vague_phrases=[term for term in _VAGUE if term in lowered],
@@ -305,12 +320,25 @@ class RuleBasedExtractor:
         word. A bare number below a hundred is far more likely to be a count than
         a price, so it only counts as money when a currency marker says so.
         """
-        for match in _AMOUNT.finditer(text):
-            digits = match.group(1).replace(",", "")
-            marked = bool(re.search(r"(rs\.?|inr|₹)", match.group(0), re.IGNORECASE))
-            if marked or float(digits) >= 100:
-                return match
+        for pattern in (_AMOUNT, _TRAILING_AMOUNT):
+            for match in pattern.finditer(text):
+                digits = match.group(1).replace(",", "")
+                marked = bool(re.search(r"(rs\.?|inr|₹)", match.group(0), re.IGNORECASE))
+                if marked or float(digits) >= 100:
+                    return match
         return _BARE_AMOUNT.search(text)
+
+    @staticmethod
+    def _product_ref(text: str) -> str | None:
+        match = _PRODUCT_REF.search(text)
+        return match.group(1).strip() if match else None
+
+    @staticmethod
+    def _brand(text: str) -> str | None:
+        match = _BRAND.search(text)
+        if not match:
+            return None
+        return (match.group(1) or match.group(2)).strip()
 
     @staticmethod
     def _category(lowered: str) -> str | None:

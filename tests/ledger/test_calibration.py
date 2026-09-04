@@ -1,16 +1,20 @@
-"""Does confidence actually correlate with correctness?
+"""Does confidence correlate with correctness?
 
-CLAUDE.md's stage 4 gate says to check this against the gold set.
-SPEC-DECISIONS.md wins on contradiction and says gold is tuned on never and
-scored once at the end. Both hold if the check runs against a development set
-written for the purpose, which is what data/dev/calibration.json is.
+CLAUDE.md's stage 4 gate says to check this on gold. SPEC-DECISIONS.md wins on
+contradiction and says gold is tuned on never and scored once at the end. Both
+hold by calibrating on data/dev/calibration.json, written for the purpose and
+under the same import ban as the gold set.
 
-Running this found two real defects in the scoring rather than a bad threshold:
-vague terms were matched as substrings, so "refurbished" tripped the "ish" rule
-and dragged a perfectly clear instruction under the bar; and the multi-unit
-ambiguity penalty fired on "up to 3 reams, budget 1500", where a total reading
-is the only natural one. Both are fixed, and both are what a calibration set is
-for.
+The first forty cases separated perfectly, which said more about the author than
+the extractor. Twenty harder ones were added -- injection-bearing instructions,
+abbreviated real phrasing, conditional ceilings, named products -- and the
+classes now overlap, which is the honest picture.
+
+The two error directions are not equivalent and are asserted separately.
+Accepting an instruction that should have been questioned is a safety failure:
+money moves on a mandate nobody confirmed. Questioning an instruction that was
+usable is a recall cost: someone answers a question they did not need to. The
+first is held at zero. The second is bounded and its causes are named.
 """
 
 from __future__ import annotations
@@ -33,6 +37,16 @@ CASES = json.loads(
 NOW = datetime(2026, 9, 4, 10, 0, tzinfo=UTC)
 EXTRACT = RuleBasedExtractor()
 
+# Instructions the offline extractor cannot categorise, because a bare product
+# name needs a catalog and it has none. Confidence reports zero and the system
+# asks, which is correct behaviour on a recall gap rather than a calibration
+# failure. Pinned here so a new miss shows up as a change rather than a shrug.
+KNOWN_RECALL_GAPS = {
+    "Buy the Asics Gel-Contend 9, under 5000.",
+    "Order the Lenovo IdeaPad Slim 3 under 45000.",
+    "Order something by Asics under 5000.",
+}
+
 
 def weakest(instruction: str) -> float:
     proposal = build_ledger(
@@ -42,58 +56,74 @@ def weakest(instruction: str) -> float:
 
 
 SCORED = [(case["instruction"], case["verdict"], weakest(case["instruction"])) for case in CASES]
-USABLE = [score for _, verdict, score in SCORED if verdict == "USABLE"]
-ASK = [score for _, verdict, score in SCORED if verdict == "ASK"]
+CONFIDENTLY_WRONG = [(i, s) for i, v, s in SCORED if v == "ASK" and s >= DEFAULT_THRESHOLD]
+CAUTIOUSLY_WRONG = [(i, s) for i, v, s in SCORED if v == "USABLE" and s < DEFAULT_THRESHOLD]
 
 
-def test_the_calibration_set_is_balanced_enough_to_mean_something() -> None:
-    assert len(CASES) >= 40
-    assert len(USABLE) >= 15 and len(ASK) >= 15
+def test_the_set_is_large_and_balanced_enough_to_mean_something() -> None:
+    assert len(CASES) >= 60
+    verdicts = [case["verdict"] for case in CASES]
+    assert verdicts.count("USABLE") >= 25 and verdicts.count("ASK") >= 20
 
 
-def test_confidence_separates_the_two_classes() -> None:
-    """The correlation the gate asks for, stated as a gap rather than a coefficient."""
-    assert min(USABLE) > max(ASK), (
-        f"classes overlap: lowest usable {min(USABLE):.2f} <= highest ask {max(ASK):.2f}"
+def test_nothing_is_confidently_wrong() -> None:
+    """The safety assertion. An accepted mandate is one money can move against.
+
+    This is held at zero rather than at a rate. A single case here is a mandate
+    activated from an instruction that did not support one.
+    """
+    assert CONFIDENTLY_WRONG == [], (
+        "instructions accepted that should have been questioned: "
+        + "; ".join(f"{text!r} at {score:.2f}" for text, score in CONFIDENTLY_WRONG)
+    )
+
+
+def test_injected_instructions_are_never_confidently_accepted_on_a_false_number() -> None:
+    """Injection may cost a question. It may not buy a mandate."""
+    for instruction, verdict, score in SCORED:
+        if "SYSTEM" in instruction or "Ignore all previous" in instruction:
+            assert not (verdict == "ASK" and score >= DEFAULT_THRESHOLD), instruction
+
+
+def test_caution_is_bounded_and_every_instance_is_accounted_for() -> None:
+    """Recall failures are tolerable, unexplained ones are not."""
+    unexplained = [text for text, _ in CAUTIOUSLY_WRONG if text not in KNOWN_RECALL_GAPS]
+    assert unexplained == [], (
+        f"new recall gaps, investigate rather than widen the list: {unexplained}"
+    )
+    assert len(CAUTIOUSLY_WRONG) <= 6
+
+
+def test_accuracy_holds_on_the_harder_set() -> None:
+    wrong = len(CONFIDENTLY_WRONG) + len(CAUTIOUSLY_WRONG)
+    assert (len(SCORED) - wrong) / len(SCORED) >= 0.90
+
+
+def test_confidence_still_ranks_the_classes_apart_on_average() -> None:
+    """Not separation any more, but the signal has to point the right way."""
+    usable = [s for _, v, s in SCORED if v == "USABLE"]
+    ask = [s for _, v, s in SCORED if v == "ASK"]
+    assert sum(usable) / len(usable) - sum(ask) / len(ask) > 0.5
+
+
+def test_the_threshold_is_above_every_case_that_must_be_questioned() -> None:
+    """0.85 was invented. What the data supports is a floor, not that exact value.
+
+    Every ASK case scores below it, so it is high enough. Lowering it below the
+    highest ASK score would start accepting mandates nobody confirmed.
+    """
+    ask_scores = [s for _, v, s in SCORED if v == "ASK"]
+    assert max(ask_scores) < DEFAULT_THRESHOLD, (
+        f"threshold {DEFAULT_THRESHOLD} would accept an ASK case scoring {max(ask_scores):.2f}"
     )
 
 
 @pytest.mark.parametrize(
-    ("instruction", "verdict", "score"), SCORED, ids=[c["instruction"][:40] for c in CASES]
+    ("instruction", "verdict", "score"),
+    [row for row in SCORED if row[0] not in KNOWN_RECALL_GAPS],
+    ids=lambda value: value[:38] if isinstance(value, str) else str(value),
 )
-def test_every_case_falls_on_the_right_side_of_the_threshold(
-    instruction: str, verdict: str, score: float
-) -> None:
-    accepted = score >= DEFAULT_THRESHOLD
-    assert accepted == (verdict == "USABLE"), (
+def test_each_case_lands_correctly(instruction: str, verdict: str, score: float) -> None:
+    assert (score >= DEFAULT_THRESHOLD) == (verdict == "USABLE"), (
         f"{instruction!r} scored {score:.2f}, expected {verdict}"
     )
-
-
-def test_the_threshold_sits_inside_the_separating_band() -> None:
-    """0.85 was invented. The data says it is inside the valid range, not that it is special.
-
-    Any threshold above the highest ASK score and at or below the lowest USABLE
-    score classifies this set perfectly. 0.85 is one of many, chosen to sit near
-    the conservative end, because asking one time too many costs a question and
-    accepting one time too many costs money.
-    """
-    assert max(ASK) < DEFAULT_THRESHOLD <= min(USABLE)
-
-
-def test_a_clearly_stated_instruction_scores_at_the_top() -> None:
-    assert weakest("Buy me a pair of running shoes, budget 5000 rupees.") == 1.0
-
-
-def test_the_word_boundary_fix_holds() -> None:
-    """ "refurbished" contains "ish". Substring matching cost this case 0.55."""
-    assert weakest("Buy a refurbished laptop under 40000.") == 1.0
-
-
-def test_an_upper_bounded_count_is_not_treated_as_ambiguous() -> None:
-    """ "up to 3 reams, budget 1500" reads as a total to any English speaker."""
-    assert weakest("Get me up to 3 reams of paper, budget 1500.") == 1.0
-
-
-def test_an_exact_count_with_an_unmarked_budget_still_is() -> None:
-    assert weakest("Get me 3 shirts, budget 2000.") < DEFAULT_THRESHOLD

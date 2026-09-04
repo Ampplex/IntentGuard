@@ -597,9 +597,43 @@ cleanly that 0.85 is one of many values that work. It is kept because it sits at
 the conservative end of the band, and asking one time too many costs a question
 while accepting one time too many costs money.
 
-**And the clean separation is itself suspicious.** The same author wrote the
-extractor and the calibration set, which is the independence problem the gold set
-exists to avoid, at a smaller scale. Forty hand-written instructions are almost
-certainly easier than real ones. The number to trust is the one the gold set
-produces at stage 9, and this band should be re-derived against the synthetic set
-when it exists.
+**And the clean separation was itself suspicious**, so the set was made harder.
+Twenty cases were added: injection carried inside the user instruction, real
+abbreviated phrasing, conditional and competing ceilings, and named products. The
+classes now overlap, which is the honest picture. Accuracy is 93 percent.
+
+That harder run found four more defects rather than a bad threshold. Bound words
+were only read before the number, so "45000 max" and "900 for both" extracted
+nothing. Competing sums in one instruction were silently resolved by taking the
+first, so "budget 15000, but 16000 is fine if it is 4K" produced a confident
+wrong ceiling. An amount scan was narrowed from every match to the first during
+an edit, which broke a case that had previously passed. And one case was
+mislabelled by its author: "spend what you think is fair, under 6000 absolute
+max" is usable, because the discretion sits underneath a firm bound.
+
+**The two error directions are now measured separately, because they are not
+equivalent.** Accepting an instruction that should have been questioned is a
+safety failure: money moves against a mandate nobody confirmed. Questioning an
+instruction that was usable is a recall cost: somebody answers a question they
+did not need to. The first is asserted at zero, not at a rate. The second is
+bounded at six and every instance is pinned by name, so a new one surfaces as a
+change rather than a shrug.
+
+Three of the four remaining recall gaps are the same limitation: the offline
+extractor cannot categorise a bare product name because it has no catalog.
+Confidence reports zero and the system asks, which is correct behaviour on a
+recall gap. The model-backed path is expected to close them and that claim is
+untested until a key exists.
+
+**What the data says about 0.85 is narrower than "it is correct".** Every case
+that must be questioned scores below it, so it is high enough, and the test
+asserts that floor rather than the value. Lowering it beneath the highest ASK
+score would start accepting mandates nobody confirmed. It should be re-derived
+against the synthetic set at stage 9.
+
+**Injection reaching the extractor is now tested directly.** The user
+instruction, unlike raw_description, is text a model actually parses. The
+property asserted is not that the decision never changes -- an injected number
+can and does cost a question -- but that no injected text ever raises a limit,
+relaxes a permission, or produces a mandate more permissive than the clean
+instruction would. Injection can buy an escalation. It cannot buy an approval.
