@@ -1,0 +1,391 @@
+<title>IntentGuard Live Run</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #F4F6F7;
+    --surface: #FFFFFF;
+    --sunk: #EAEEF0;
+    --ink: #12191E;
+    --ink-soft: #4A5964;
+    --ink-faint: #7C8A94;
+    --rule: #D7DEE2;
+    --rule-soft: #E6EBEE;
+    --accent: #0F5F6B;
+    --accent-soft: #E2F0F1;
+    --allow: #1B6B4A;
+    --allow-bg: #E3F1EA;
+    --block: #962B27;
+    --block-bg: #F8E7E6;
+    --escalate: #8F5A08;
+    --escalate-bg: #FAEEDB;
+    --shadow: 0 1px 2px rgba(18,25,30,.05), 0 8px 22px -14px rgba(18,25,30,.22);
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --serif: "IBM Plex Serif", Georgia, serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1317; --surface: #141D22; --sunk: #101A1F;
+      --ink: #E3EAEE; --ink-soft: #A3B2BB; --ink-faint: #75868F;
+      --rule: #26333A; --rule-soft: #1D272D;
+      --accent: #52B4C0; --accent-soft: #122E33;
+      --allow: #58C08D; --allow-bg: #12291F;
+      --block: #E0817C; --block-bg: #2B1917;
+      --escalate: #DDA457; --escalate-bg: #2A2113;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 28px -16px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0D1317; --surface: #141D22; --sunk: #101A1F;
+    --ink: #E3EAEE; --ink-soft: #A3B2BB; --ink-faint: #75868F;
+    --rule: #26333A; --rule-soft: #1D272D;
+    --accent: #52B4C0; --accent-soft: #122E33;
+    --allow: #58C08D; --allow-bg: #12291F;
+    --block: #E0817C; --block-bg: #2B1917;
+    --escalate: #DDA457; --escalate-bg: #2A2113;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 28px -16px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--ground); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .page { max-width: 1120px; margin: 0 auto; padding: 0 26px 90px; }
+
+  h1 { font-size: clamp(2rem, 4.4vw, 2.85rem); font-weight: 600; letter-spacing: -.03em; line-height: 1.05; margin: 0 0 14px; }
+  h2 { font-size: 1.2rem; font-weight: 600; letter-spacing: -.012em; margin: 0 0 4px; }
+  h3 { font-size: .95rem; font-weight: 600; margin: 0 0 6px; }
+  p { margin: 0 0 12px; }
+  .serif { font-family: var(--serif); }
+  code, .mono { font-family: var(--mono); }
+
+  header.mast { padding: 56px 0 26px; border-bottom: 2px solid var(--ink); }
+  .eyebrow { font-size: .72rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; }
+  .standfirst { font-family: var(--serif); font-size: 1.07rem; color: var(--ink-soft); max-width: 62ch; margin: 0 0 8px; }
+  .liveness { font-size: .82rem; color: var(--ink-faint); max-width: 68ch; margin: 0; }
+  .liveness strong { color: var(--ink-soft); font-weight: 600; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(146px, 1fr)); gap: 0; border-top: 1px solid var(--rule); margin-top: 22px; }
+  .tile { padding: 14px 18px 14px 0; border-right: 1px solid var(--rule-soft); }
+  .tile:last-child { border-right: 0; }
+  .tile .n { font-family: var(--mono); font-size: 1.35rem; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; display: block; line-height: 1.15; }
+  .tile .k { font-size: .74rem; color: var(--ink-faint); display: block; margin-top: 3px; }
+
+  section { padding: 42px 0 0; }
+  .sec-head { display: flex; align-items: baseline; gap: 13px; margin-bottom: 16px; }
+  .sec-num { font-family: var(--mono); font-size: .76rem; color: var(--accent); padding-top: 3px; }
+  .deck { font-size: .88rem; color: var(--ink-faint); margin: 3px 0 0; max-width: 66ch; }
+
+  .chip { display: inline-block; font-size: .68rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; white-space: nowrap; }
+  .chip.ALLOW { background: var(--allow-bg); color: var(--allow); }
+  .chip.BLOCK { background: var(--block-bg); color: var(--block); }
+  .chip.ESCALATE { background: var(--escalate-bg); color: var(--escalate); }
+  .chip.muted { background: var(--sunk); color: var(--ink-faint); }
+  .chip.on { background: var(--accent-soft); color: var(--accent); }
+
+  .cards { display: grid; gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--rule); border-radius: 5px; box-shadow: var(--shadow); overflow: hidden; border-left: 3px solid var(--rule); }
+  .card.ALLOW { border-left-color: var(--allow); }
+  .card.BLOCK { border-left-color: var(--block); }
+  .card.ESCALATE { border-left-color: var(--escalate); }
+  .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 15px 18px 12px; flex-wrap: wrap; }
+  .card-title { font-weight: 600; font-size: 1rem; }
+  .instruction { font-family: var(--serif); font-size: .92rem; color: var(--ink-soft); margin: 4px 0 0; }
+  .card-body { padding: 0 18px 16px; display: grid; gap: 12px; }
+
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .8rem; color: var(--ink-faint); }
+  .meta b { font-family: var(--mono); font-weight: 500; color: var(--ink-soft); }
+
+  .rounds { border: 1px solid var(--rule-soft); border-radius: 4px; overflow: hidden; }
+  .round { display: flex; gap: 12px; align-items: baseline; padding: 6px 12px; font-family: var(--mono); font-size: .78rem; border-bottom: 1px solid var(--rule-soft); }
+  .round:last-child { border-bottom: 0; }
+  .round .no { color: var(--ink-faint); width: 3.4em; flex: none; }
+  .round .q { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .round .ask { color: var(--ink-faint); margin-left: auto; }
+  .round.final { background: var(--sunk); }
+
+  .finding { background: var(--sunk); border-radius: 4px; padding: 10px 13px; }
+  .finding .code { font-family: var(--mono); font-size: .74rem; font-weight: 600; letter-spacing: .03em; }
+  .finding p { font-family: var(--serif); font-size: .9rem; margin: 4px 0 0; color: var(--ink-soft); }
+  .finding.BLOCK .code { color: var(--block); }
+  .finding.ESCALATE .code { color: var(--escalate); }
+
+  .receipt { font-family: var(--mono); font-size: .74rem; color: var(--ink-faint); word-break: break-all; }
+  .receipt b { color: var(--ink-soft); font-weight: 500; }
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 5px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: .84rem; min-width: 520px; }
+  th { text-align: left; font-size: .7rem; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); padding: 10px 14px; background: var(--sunk); border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.mono { font-family: var(--mono); font-size: .78rem; }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 5px; padding: 16px 18px; }
+  .panel p { font-size: .88rem; color: var(--ink-soft); margin-bottom: 8px; }
+  .panel p:last-child { margin-bottom: 0; }
+  .steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 7px; }
+  .steps li { display: flex; gap: 9px; align-items: baseline; font-size: .87rem; }
+  .steps .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; transform: translateY(-2px); }
+
+  .caveat { border-left: 3px solid var(--escalate); background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--escalate); border-radius: 4px; padding: 14px 18px; margin: 16px 0 0; font-family: var(--serif); font-size: .92rem; color: var(--ink-soft); }
+  .caveat strong { color: var(--ink); font-weight: 600; font-family: var(--sans); }
+
+  pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 5px; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: .74rem; line-height: 1.6; margin: 0; color: var(--ink-soft); }
+
+  footer { margin-top: 52px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: .8rem; color: var(--ink-faint); max-width: 70ch; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="page">
+  <header class="mast">
+    <p class="eyebrow">Live run &middot; Razorpay AI Buildathon, Track 01</p>
+    <h1>IntentGuard</h1>
+    <p class="standfirst">The authorization layer that lets a Razorpay merchant safely accept an order from an AI buyer. Every figure below was produced by running the system, not typed in.</p>
+    <p class="liveness" id="liveness"></p>
+    <div class="tiles" id="tiles"></div>
+  </header>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><div>
+      <h2>Five transactions, start to finish</h2>
+      <p class="deck">User instruction, mandate, bounded merchant view, negotiation, decision, payment. The merchant never sees the ceiling in any of them.</p>
+    </div></div>
+    <div class="cards" id="scenarios"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><div>
+      <h2>Every hostile mode, judged on arrival</h2>
+      <p class="deck">One row per behaviour the merchant service can adopt. The quote crosses the wire as JSON and is parsed before it is judged, so a payload carrying a field the schema has no slot for is part of the test rather than something no fixture could express.</p>
+    </div></div>
+    <div class="tablewrap"><table id="threat"></table></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><div>
+      <h2>Two failures, handled</h2>
+      <p class="deck">The track asks to see one failure handled gracefully. These are both of them, run live.</p>
+    </div></div>
+    <div class="two" id="failures"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><div>
+      <h2>The benchmark</h2>
+      <p class="deck">The synthetic training slice, scored through the same entry point a merchant's payload uses.</p>
+    </div></div>
+    <div class="two" id="metrics"></div>
+    <div class="tablewrap" style="margin-top:14px"><table id="perclass"></table></div>
+    <div class="caveat" id="caveat"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><div>
+      <h2>The audit trail</h2>
+      <p class="deck">Every decision is recorded, blocks included, each chained to the one before it. A record altered afterwards breaks every link downstream.</p>
+    </div></div>
+    <div class="two" id="auditpanels"></div>
+    <pre id="record" style="margin-top:14px"></pre>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script type="application/json" id="run">__DASHBOARD_DATA__</script>
+<script>
+  const D = JSON.parse(document.getElementById("run").textContent);
+  const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c; if (h !== undefined) n.innerHTML = h; return n; };
+  const esc = s => String(s).replace(/[&<>]/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]));
+  const pct = v => (v * 100).toFixed(1).replace(/\.0$/, "") + "%";
+
+  document.getElementById("liveness").innerHTML =
+    esc(D.note) + " Generated <strong>" + esc(D.generated_at.slice(0, 19).replace("T", " ")) + " UTC</strong>.";
+
+  const allowed = D.scenarios.filter(s => s.decision === "ALLOW").length;
+  const tiles = [
+    [D.benchmark.cases.toLocaleString(), "benchmark cases scored"],
+    [pct(D.benchmark.authorized_completion_rate), "legitimate orders completed"],
+    [pct(D.benchmark.false_block_rate), "good orders wrongly blocked"],
+    [D.latency.p50_ms + " ms", "gate p50, " + D.latency.samples.toLocaleString() + " runs"],
+    [D.audit.records, "audit records, chain " + (D.audit.intact ? "intact" : "BROKEN")],
+    [D.injection.decisions_changed + " / " + D.injection.pairs, "injections that moved a decision"],
+  ];
+  const tileBox = document.getElementById("tiles");
+  tiles.forEach(([n, k]) => {
+    const t = el("div", "tile");
+    t.appendChild(el("span", "n", esc(n)));
+    t.appendChild(el("span", "k", esc(k)));
+    tileBox.appendChild(t);
+  });
+
+  const scenarios = document.getElementById("scenarios");
+  D.scenarios.forEach(s => {
+    const card = el("div", "card " + s.decision);
+    const top = el("div", "card-top");
+    const left = el("div");
+    left.appendChild(el("div", "card-title", esc(s.name)));
+    left.appendChild(el("p", "instruction", "&ldquo;" + esc(s.instruction) + "&rdquo;"));
+    top.appendChild(left);
+    const chips = el("div");
+    chips.appendChild(el("span", "chip " + s.decision, s.decision));
+    chips.appendChild(document.createTextNode(" "));
+    chips.appendChild(el("span", "chip " + (s.payment.reached_the_rail ? "on" : "muted"),
+      s.payment.reached_the_rail ? "razorpay called" : "rail not reached"));
+    top.appendChild(chips);
+    card.appendChild(top);
+
+    const body = el("div", "card-body");
+    const meta = el("div", "meta");
+    meta.innerHTML =
+      "ceiling <b>" + esc(s.mandate.ceiling) + "</b>" +
+      "<span>merchant sees the ceiling: <b>" + (s.merchant_view_has_ceiling ? "yes" : "no") + "</b></span>" +
+      "<span>target <b>" + esc(s.negotiation.target) + "</b></span>" +
+      "<span>decided in <b>" + s.latency_ms + " ms</b></span>";
+    body.appendChild(meta);
+
+    if (s.negotiated_product !== s.delivered_product) {
+      body.appendChild(el("div", "meta",
+        "negotiated <b>" + esc(s.negotiated_product) + "</b><span>delivered <b>" + esc(s.delivered_product) + "</b></span>"));
+    }
+
+    const rounds = el("div", "rounds");
+    s.negotiation.rounds.forEach(r => {
+      const row = el("div", "round" + (r.note === "final offer" ? " final" : ""));
+      row.appendChild(el("span", "no", "r" + r.number));
+      row.appendChild(el("span", "q", esc(r.quoted)));
+      row.appendChild(el("span", "ask", r.asked ? "asked " + esc(r.asked) : esc(r.note)));
+      rounds.appendChild(row);
+    });
+    body.appendChild(rounds);
+
+    s.violations.forEach(v => {
+      const f = el("div", "finding " + v.outcome);
+      f.appendChild(el("div", "code", esc(v.code)));
+      f.appendChild(el("p", null, esc(v.explanation)));
+      body.appendChild(f);
+    });
+
+    if (s.compliance_receipt) {
+      body.appendChild(el("div", "receipt",
+        "<b>receipt</b> " + esc(s.compliance_receipt.receipt_id) +
+        " &middot; <b>authorised</b> " + esc(s.compliance_receipt.amount) +
+        " &middot; <b>order</b> " + esc(s.payment.order_id) +
+        "<br><b>" + s.compliance_receipt.constraints_checked.length + " constraints checked</b> &middot; " +
+        esc(s.compliance_receipt.offer_hash)));
+    }
+    card.appendChild(body);
+    scenarios.appendChild(card);
+  });
+
+  const threat = document.getElementById("threat");
+  threat.innerHTML = "<thead><tr><th>Merchant behaviour</th><th>Total quoted</th><th>Decision</th><th>Violation codes</th></tr></thead>";
+  const tbody = el("tbody");
+  D.threat_table.forEach(r => {
+    const tr = el("tr");
+    tr.innerHTML =
+      "<td class='mono'>" + esc(r.attack) + "</td>" +
+      "<td class='num mono'>" + esc(r.total) + "</td>" +
+      "<td><span class='chip " + r.decision + "'>" + r.decision + "</span></td>" +
+      "<td class='mono'>" + (r.codes.length ? r.codes.map(esc).join(", ") : "&mdash;") + "</td>";
+    tbody.appendChild(tr);
+  });
+  threat.appendChild(tbody);
+
+  const failures = document.getElementById("failures");
+  const amb = D.mandate_escalations;
+  const escPanel = el("div", "panel");
+  escPanel.innerHTML = "<h3>An instruction with no ceiling in it</h3>";
+  amb.forEach(a => {
+    escPanel.appendChild(el("p", null,
+      "<em class='serif'>&ldquo;" + esc(a.instruction) + "&rdquo;</em><br>" +
+      "<span class='chip " + (a.mandate_built ? "ESCALATE" : "BLOCK") + "'>" +
+      (a.mandate_built ? "paused, asked" : "no mandate built") + "</span> " +
+      (a.question ? "<br><span style='font-size:.85rem'>" + esc(a.question) + "</span>" : "") +
+      (a.resolution ? "<br><span style='font-size:.82rem;color:var(--ink-faint)'>answered " + a.hours_to_answer +
+        "h later &rarr; " + esc(a.resolution) + "; expired while waiting: " + a.expired_while_waiting + "</span>" : "")));
+  });
+  const oe = D.offer_escalation;
+  escPanel.appendChild(el("p", null,
+    "<span style='font-size:.82rem;color:var(--ink-faint)'>A cart the engine could not judge (condition &ldquo;" +
+    esc(oe.condition_offered) + "&rdquo;) &rarr; " + esc(oe.decision) + ", clock paused, human answered &rarr; " +
+    esc(oe.decision_after) + " recorded as human-confirmed.</span>"));
+  failures.appendChild(escPanel);
+
+  const t = D.timeout;
+  const toPanel = el("div", "panel");
+  toPanel.innerHTML = "<h3>Razorpay stops answering mid-execution</h3>";
+  const steps = el("ul", "steps");
+  [
+    "Attempt recorded <em>before</em> the request leaves",
+    "No answer &rarr; outcome <b>" + esc(t.attempt) + "</b>, not a failure",
+    "Mandate &rarr; <b>" + esc(t.ledger_after_timeout) + "</b>",
+    "Retried blind: <b>" + (t.retried ? "yes" : "no") + "</b>",
+    "Reconciled by repeating the identical request &rarr; <b>" + esc(t.reconciled_order) + "</b> " + esc(JSON.stringify(t.payment_statuses)),
+    "Mandate &rarr; <b>" + esc(t.ledger_after_reconciling) + "</b>",
+  ].forEach(s => {
+    const li = el("li");
+    li.appendChild(el("span", "dot"));
+    li.appendChild(el("span", null, s));
+    steps.appendChild(li);
+  });
+  toPanel.appendChild(steps);
+  failures.appendChild(toPanel);
+
+  const b = D.benchmark;
+  const metrics = document.getElementById("metrics");
+  const product = el("div", "panel");
+  product.innerHTML =
+    "<h3>Product</h3>" +
+    "<p>legitimate orders completed <b class='mono'>" + pct(b.authorized_completion_rate) + "</b></p>" +
+    "<p>good orders wrongly blocked <b class='mono'>" + pct(b.false_block_rate) + "</b></p>" +
+    "<p>value wrongly blocked <b class='mono'>Rs " + Math.round(b.value_wrongly_blocked_paise / 100).toLocaleString() + "</b></p>" +
+    "<p style='color:var(--ink-faint);font-size:.82rem'>A gate that blocks everything is a perfect detector and a useless product, so these lead.</p>";
+  metrics.appendChild(product);
+  const safety = el("div", "panel");
+  safety.innerHTML =
+    "<h3>Safety</h3>" +
+    "<p>unauthorized orders passed <b class='mono'>" + pct(b.unauthorized_pass_rate) + "</b></p>" +
+    "<p>exposure prevented <b class='mono'>Rs " + Math.round(b.exposure_prevented_paise / 100).toLocaleString() + "</b></p>" +
+    "<p>escalation rate <b class='mono'>" + pct(b.escalation_rate) + "</b> <span style='color:var(--ink-faint)'>over decidable cases only</span></p>" +
+    "<p>explanation quality <b class='mono'>" + pct(b.explanation_quality.overall) + "</b></p>";
+  metrics.appendChild(safety);
+
+  const per = document.getElementById("perclass");
+  per.innerHTML = "<thead><tr><th>Outcome</th><th>Support</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead>";
+  const pb = el("tbody");
+  b.per_class.forEach(c => {
+    const tr = el("tr");
+    tr.innerHTML =
+      "<td><span class='chip " + c.outcome + "'>" + c.outcome + "</span></td>" +
+      "<td class='num mono'>" + c.support + "</td>" +
+      "<td class='num mono'>" + c.precision.toFixed(3) + "</td>" +
+      "<td class='num mono'>" + c.recall.toFixed(3) + "</td>" +
+      "<td class='num mono'>" + c.f1.toFixed(3) + "</td>";
+    pb.appendChild(tr);
+  });
+  per.appendChild(pb);
+
+  document.getElementById("caveat").innerHTML =
+    "<strong>This number is not evidence that the system is correct.</strong> It means the engine and the benchmark generator read the specification the same way, which is what you should expect when one repository writes both. The generator imports nothing from the implementation, a fifth of every kind and label is held out, every violation kind is paired with a compliant offer of the same shape so the set cannot be passed by blocking a payload shape, and the hand-labelled gold set of 100 cases has never been scored. " +
+    "The injection figure is equally narrow: " + D.injection.decisions_changed + " of " + D.injection.pairs +
+    " twin pairs moved a decision, and that is a fact about transport rather than about a model resisting persuasion, because nothing reads the untrusted description yet.";
+
+  const ap = document.getElementById("auditpanels");
+  const chain = el("div", "panel");
+  chain.innerHTML = "<h3>Chain</h3><p>records <b class='mono'>" + D.audit.records + "</b></p>" +
+    "<p>integrity <b class='mono'>" + (D.audit.intact ? "intact" : "BROKEN") + "</b></p>" +
+    "<p style='color:var(--ink-faint);font-size:.82rem'>A dispute turns on whether the record was written before the payment or edited after it. An append-only file cannot answer that; a chained one can.</p>";
+  ap.appendChild(chain);
+  const mix = el("div", "panel");
+  mix.innerHTML = "<h3>What it holds</h3>" +
+    Object.entries(D.audit.decisions).map(([k, v]) =>
+      "<p><span class='chip " + k + "'>" + k + "</span> <b class='mono'>" + v + "</b></p>").join("") +
+    "<p style='color:var(--ink-faint);font-size:.82rem'>Blocks are recorded as fully as allows. A trail that only records approvals cannot answer why something was refused.</p>";
+  ap.appendChild(mix);
+
+  document.getElementById("record").textContent = JSON.stringify(D.audit.sample[0], null, 2);
+
+  document.getElementById("footer").innerHTML =
+    "Regenerate this page with <code>python -m intentguard.bench.export</code>, which runs extraction, negotiation, the gate, the payment adapter and the audit log and writes what happened. " +
+    "Payments use a stand-in for Razorpay's test-mode API, so no live call was made; endpoints and field shapes were read from Razorpay's documentation rather than recalled.";
+</script>

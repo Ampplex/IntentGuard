@@ -55,10 +55,12 @@ src/intentguard/
   buyer/      the user's agent: negotiation, bounded and always terminating.
   semantic/   substitution and drift. Advisory to an escalation, never a block.
   payments/   Razorpay adapter, idempotency, the uncertain-execution path.
-  bench/      generator (imports nothing from intentguard) and harness.
+  bench/      generator (imports nothing from intentguard), harness, export, dashboard.
   gate/       orchestration, the wire boundary, escalation, timing, audit write.
   audit/      the tamper-evident trail, plus rendering and receipt verification.
   metrics/    measurement. Cannot import policy/, does no file I/O.
+dashboard/
+  template.html   the page, with one placeholder for a real run
 data/
   gold/       100 hand-labelled cases, held out. Cannot import intentguard.
   dev/        60-case confidence set and 30-pair substitution set. Same import ban.
@@ -92,11 +94,14 @@ uv pip install -e ".[dev]"
 .venv/bin/python data/dev/substitutions.py  # regenerate the substitution set
 PYTHONPATH=src .venv/bin/python -m intentguard.bench.generator   # regenerate the benchmark
 PYTHONPATH=src .venv/bin/python -m intentguard.bench.harness     # report the training slice
+PYTHONPATH=src .venv/bin/python -m intentguard.bench.export      # run everything, write data/dashboard.json
+PYTHONPATH=src .venv/bin/python -m intentguard.bench.dashboard \
+    dashboard/template.html dashboard/index.html               # build the page from that run
 ```
 
 ## Status
 
-Stages 1 to 11 of 12 complete. See the build order table in CLAUDE.md.
+All twelve stages complete. See the build order table in CLAUDE.md.
 
 | Stage | Gate | State |
 |---|---|---|
@@ -111,6 +116,7 @@ Stages 1 to 11 of 12 complete. See the build order table in CLAUDE.md.
 | 9. `bench/` generator and harness | Generator import test passes; full run reports | passing |
 | 10. Compliance receipt and audit rendering | Every decision inspectable | passing |
 | 11. Escalation end to end | Ambiguous instruction pauses, asks, resumes | passing |
+| 12. Dashboard | Renders a real run, not fixtures | passing |
 
 Audit and metrics are built rather than deferred, because the track's bar asks
 to see an audit trail and a graceful failure, and both sat near the end of the
