@@ -367,13 +367,15 @@ def test_a_hostile_merchant_is_refused_through_the_whole_chain(gateway) -> None:
 
 
 def test_an_unknown_merchant_behaviour_is_rejected(gateway) -> None:
+    """The mandate is built here rather than extracted.
+
+    This test is about rejecting an unknown behaviour name, and routing it
+    through a live model first made it fail on someone else's rate limit -- a
+    red test that says nothing about the code under it is worse than no test.
+    """
     client, _ = gateway
-    mandate = client.post(
-        "/api/extract", json={"instruction": "Buy shoes under 5000 rupees."}
-    ).json()
-    response = client.post(
-        "/api/negotiate", json={"ledger": mandate["ledger"], "hostility": "made_up"}
-    )
+    mandate = body()["ledger"]
+    response = client.post("/api/negotiate", json={"ledger": mandate, "hostility": "made_up"})
     assert response.status_code == 400
 
 

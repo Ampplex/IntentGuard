@@ -3,8 +3,13 @@
 // buyer and merchant agents, and an order is created against Razorpay's
 // test-mode API. A demo that fakes any of that is a demo of nothing.
 
+// Same origin when the API is served beside the page, and an absolute origin
+// when the two are hosted apart -- the page on a CDN, the API on a machine that
+// has a filesystem for the audit trail. Set VITE_API_BASE at build time.
+const BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+
 async function call(path, body) {
-  const response = await fetch(path, {
+  const response = await fetch(BASE + path, {
     method: body === undefined ? "GET" : "POST",
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -20,10 +25,13 @@ async function call(path, body) {
 
 export const getConfig = () => call("/api/config").then((r) => r.payload);
 export const getCatalog = () => call("/api/catalog").then((r) => r.payload);
+export const getMetrics = () => call("/api/metrics").then((r) => r.payload);
 export const extract = (instruction) =>
   call("/api/extract", { instruction }).then((r) => r.payload);
 export const negotiate = (ledger, hostility, concession) =>
-  call("/api/negotiate", { ledger, hostility, concession }).then((r) => r.payload);
+  call("/api/negotiate", { ledger, hostility, concession }).then(
+    (r) => r.payload,
+  );
 export const createOrder = (ledger, offer, negotiatedProduct) =>
   call("/api/create-order", {
     ledger,

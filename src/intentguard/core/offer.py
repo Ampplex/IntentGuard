@@ -20,6 +20,7 @@ from pydantic import Field, field_validator, model_validator
 
 from .base import StrictModel
 from .enums import LineItemKind, RecurrenceInterval
+from .money import Paise
 
 
 class Product(StrictModel):
@@ -33,7 +34,7 @@ class Product(StrictModel):
 
 class LineItem(StrictModel):
     label: str
-    amount_paise: int
+    amount_paise: Paise
     kind: LineItemKind
 
     @model_validator(mode="after")
@@ -50,7 +51,7 @@ class RecurringCharge(StrictModel):
     """A future-dated obligation. Amount is irrelevant to whether it is one."""
 
     label: str
-    amount_paise: int = Field(ge=0)
+    amount_paise: Paise = Field(ge=0)
     interval: RecurrenceInterval
     starts_after_days: int = Field(default=0, ge=0)
 
@@ -58,7 +59,7 @@ class RecurringCharge(StrictModel):
 class EmiTerms(StrictModel):
     """Financing on a single purchase. The checked total is every instalment."""
 
-    installment_paise: int = Field(ge=0)
+    installment_paise: Paise = Field(ge=0)
     installment_count: int = Field(ge=1)
     provider: str | None = None
 
@@ -69,7 +70,7 @@ class Offer(StrictModel):
     quantity: int = Field(ge=1)
     currency: str
     line_items: list[LineItem] = Field(default_factory=list)
-    total_paise: int
+    total_paise: Paise
     recurring: list[RecurringCharge] = Field(default_factory=list)
     emi: EmiTerms | None = None
     raw_description: str = ""

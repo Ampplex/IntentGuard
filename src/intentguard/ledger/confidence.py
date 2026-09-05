@@ -111,6 +111,7 @@ def score_ceiling(
     quantity: int | None,
     limit_is_per_unit: bool,
     quantity_mode: str = "exact",
+    product_ref: str | None = None,
 ) -> float:
     """How much to trust the extracted spending limit."""
     if max_total_text is None:
@@ -127,7 +128,18 @@ def score_ceiling(
     # Two different sums in one instruction is a choice the user has not made.
     # "budget 15000, but 16000 is fine if it is 4K" has no single ceiling, and
     # picking the first one silently authorizes the wrong number.
-    distinct = {m.group(0).replace(",", "") for m in _MONEY_SHAPED.finditer(instruction)}
+    # A number inside a product's name is part of the name, not a rival budget.
+    # "boAt Airdopes 141" made "budget 3500 rupees" look like two competing sums
+    # and cost it 0.6, so the agent asked the shopper for a figure they had just
+    # given it. The stated limit itself is never excluded, so an instruction
+    # that really does name two sums still loses the confidence.
+    named = (product_ref or "").lower()
+    stated = (max_total_text or "").lower()
+    distinct = {
+        m.group(0).replace(",", "")
+        for m in _MONEY_SHAPED.finditer(instruction)
+        if not (named and m.group(0).lower() in named and m.group(0).lower() not in stated)
+    }
     if len(distinct) > 1:
         score -= PENALTY_COMPETING_AMOUNTS
 
@@ -190,6 +202,7 @@ def score_extraction(instruction: str, extracted) -> dict[str, float]:
             extracted.quantity,
             extracted.limit_is_per_unit,
             extracted.quantity_mode,
+            extracted.product_ref,
         ),
         "quantity": score_quantity(instruction, extracted.quantity),
         "category": score_stated(extracted.category),

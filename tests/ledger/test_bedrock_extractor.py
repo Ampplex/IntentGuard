@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from intentguard.bedrock import reset_dialect_cache
 from intentguard.core import Category, Condition, QuantityMode
 from intentguard.ledger import ExtractedIntent
 from intentguard.ledger.bedrock_extractor import (
@@ -43,14 +44,60 @@ def extract(tool_input: Any = None, **kwargs) -> ExtractedIntent:
 # --- the request ----------------------------------------------------------
 
 
-def test_the_tool_call_is_forced_rather_than_suggested() -> None:
+def test_the_tool_call_is_compelled_rather_than_suggested() -> None:
     """A model that answers in prose has to be parsed, and parsing prose is
-    where a schema stops being a guarantee."""
+    where a schema stops being a guarantee.
+
+    Two spellings compel a tool call and models disagree about which they
+    accept, so the assertion is on the property rather than on one of them:
+    `auto` merely permits a tool call and would let prose through.
+    """
+    reset_dialect_cache()
     client = StubBedrock({})
     BedrockExtractor(client).extract("buy shoes")
     config = client.calls[0]["toolConfig"]
-    assert config["toolChoice"] == {"tool": {"name": TOOL_NAME}}
+    assert config["toolChoice"] in ({"tool": {"name": TOOL_NAME}}, {"any": {}})
+    assert config["toolChoice"] != {"auto": {}}
     assert config["tools"][0]["toolSpec"]["name"] == TOOL_NAME
+
+
+def test_a_model_that_rejects_forced_choice_is_still_compelled() -> None:
+    """mistral-large-2407 rejects {"tool": ...} and accepts {"any": {}}.
+
+    Falling back as far as `auto` would quietly drop the guarantee, so the
+    fallback stops at the last spelling that still requires a call.
+    """
+
+    class RejectsForcedChoice(StubBedrock):
+        def converse(self, **kwargs):
+            choice = kwargs["toolConfig"]["toolChoice"]
+            if "tool" in choice:
+                raise ValueError("This model doesn't support the toolConfig.toolChoice.tool field")
+            return super().converse(**kwargs)
+
+    reset_dialect_cache()
+    client = RejectsForcedChoice({})
+    BedrockExtractor(client).extract("buy shoes")
+    assert client.calls[-1]["toolConfig"]["toolChoice"] == {"any": {}}
+
+
+def test_a_failure_that_is_not_about_dialect_is_not_retried() -> None:
+    """Retrying a credential error in three dialects makes three of it.
+
+    A throttle would not do as the example here, because that one *is* retried
+    -- by the backoff layer, deliberately, and in the same dialect.
+    """
+
+    class Broken(StubBedrock):
+        def converse(self, **kwargs):
+            super().converse(**kwargs)
+            raise ValueError("AccessDeniedException: not authorised for this model")
+
+    reset_dialect_cache()
+    client = Broken({})
+    with pytest.raises(ValueError, match="AccessDenied"):
+        BedrockExtractor(client).extract("buy shoes")
+    assert len(client.calls) == 1
 
 
 def test_the_request_is_deterministic() -> None:

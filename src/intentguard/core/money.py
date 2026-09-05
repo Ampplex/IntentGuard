@@ -16,6 +16,9 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
+from typing import Annotated
+
+from pydantic import BeforeValidator
 
 PAISE_PER_RUPEE = 100
 MAX_DECIMAL_PLACES = 2
@@ -31,6 +34,29 @@ _CURRENCY_SUFFIXES = ("RUPEES", "RUPEE", "INR", "RS.", "RS", "PAISE")
 # comma is malformed, and a malformed amount gets refused rather than guessed
 # at -- same reason a third decimal place is refused.
 _INTEGER_PART = re.compile(r"^(?:\d+|\d{1,3}(?:,\d{2,3})+)$")
+
+# Scale words, longest first so "crores" is matched before "crore" and "lakhs"
+# before "lakh". A budget written the way people in India actually write one --
+# "7.50 crore", "2 lakh", "50k" -- parsed nothing at all before this, and an
+# unreadable ceiling becomes a question about a figure the user already gave.
+# That is a worse failure than it looks: the system asks the user to repeat
+# themselves and appears not to have read the instruction.
+_SCALES: tuple[tuple[str, int], ...] = (
+    ("CRORES", 10_000_000),
+    ("CRORE", 10_000_000),
+    ("LAKHS", 100_000),
+    ("LAKHS.", 100_000),
+    ("LAKH", 100_000),
+    ("LACS", 100_000),
+    ("LAC", 100_000),
+    ("BILLION", 1_000_000_000),
+    ("MILLION", 1_000_000),
+    ("THOUSAND", 1_000),
+    ("CR", 10_000_000),
+    ("BN", 1_000_000_000),
+    ("MN", 1_000_000),
+    ("K", 1_000),
+)
 
 
 def _require_paise(value: object, label: str = "amount") -> int:
@@ -70,11 +96,28 @@ def parse_rupees(text: str) -> int:
             cleaned = cleaned[len(prefix) :].lstrip()
             break
 
-    upper = cleaned.upper()
-    for suffix in _CURRENCY_SUFFIXES:
-        if upper.endswith(suffix):
-            cleaned = cleaned[: len(cleaned) - len(suffix)].rstrip()
-            break
+    # "7.50 crore rupees" and "Rs 2 lakh" both occur, so the currency word and
+    # the scale word are stripped in whichever order they appear.
+    scale = 1
+    while True:
+        upper = cleaned.upper()
+        for suffix in _CURRENCY_SUFFIXES:
+            if upper.endswith(suffix) and cleaned[: len(cleaned) - len(suffix)].rstrip():
+                cleaned = cleaned[: len(cleaned) - len(suffix)].rstrip()
+                break
+        else:
+            for word, multiplier in _SCALES:
+                head = cleaned[: len(cleaned) - len(word)].rstrip()
+                # A scale word only counts when digits precede it, so "krupees"
+                # or a bare "k" is still refused rather than read as a thousand.
+                if upper.endswith(word) and head and head[-1].isdigit():
+                    if scale != 1:
+                        raise ValueError(f"more than one scale word in amount: {text!r}")
+                    scale = multiplier
+                    cleaned = head
+                    break
+            else:
+                break
 
     if not cleaned:
         raise ValueError(f"no digits in amount: {text!r}")
@@ -95,14 +138,18 @@ def parse_rupees(text: str) -> int:
     if not amount.is_finite():
         raise ValueError(f"not a finite amount: {text!r}")
 
-    exponent = amount.as_tuple().exponent
-    if isinstance(exponent, int) and exponent < -MAX_DECIMAL_PLACES:
+    # Scaled before the paise check, because "7.50 crore" has two decimal places
+    # and is still an exact number of paise, while "0.001 rupees" is not. The
+    # test that matters is whether the result lands on a whole paisa.
+    amount = amount * scale
+
+    in_paise = amount.scaleb(MAX_DECIMAL_PLACES)
+    if in_paise != in_paise.to_integral_value():
         raise ValueError(
-            f"{text!r} states more than {MAX_DECIMAL_PLACES} decimal places; "
-            "IntentGuard will not round a stated amount"
+            f"{text!r} is not a whole number of paise; IntentGuard will not round a stated amount"
         )
 
-    paise = int(amount.scaleb(MAX_DECIMAL_PLACES))
+    paise = int(in_paise)
     return -paise if negative else paise
 
 
@@ -135,3 +182,33 @@ def sum_paise(amounts: Iterable[int]) -> int:
     for index, amount in enumerate(amounts):
         total += _require_paise(amount, f"amount[{index}]")
     return total
+
+
+# --- money as a declared type ---------------------------------------------
+
+
+def coerce_to_paise(value: object) -> object:
+    """Accept integer paise, or the text a person wrote, and yield paise.
+
+    Money parsing belongs in one declared type rather than at each call site.
+    Before this, the amount arrived as a string, a regex decided whether it
+    looked like money, and a `float()` decided whether it was big enough to be a
+    price -- which crashed outright on "20k" and, worse, put a float in the
+    money path to make a decision about a payment.
+
+    A bool is rejected explicitly: `True` is an int in Python, and a flag
+    silently read as one paisa is the kind of thing that only shows up in
+    production.
+    """
+    if isinstance(value, bool):
+        raise ValueError("a boolean is not an amount")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return parse_rupees(value)
+    return value
+
+
+# Every field that holds money uses this, so "₹1.25 lakh", "20k" and 125000 all
+# arrive at the same integer and nothing downstream has to guess which it got.
+Paise = Annotated[int, BeforeValidator(coerce_to_paise)]

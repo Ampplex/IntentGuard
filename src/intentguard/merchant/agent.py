@@ -17,8 +17,10 @@ import uuid
 from enum import StrEnum
 
 from ..core.money import from_rupees
-from .catalog import CatalogItem, matching
+from .catalog import CatalogItem, matching_detail
 from .projection import MerchantView
+from .rerank import Reranker
+from .search import DenseRetriever
 
 
 class Hostility(StrEnum):
@@ -72,15 +74,62 @@ class MerchantAgent:
         self,
         hostility: Hostility = Hostility.NONE,
         concession: Concession = Concession.HAGGLE,
+        reranker: Reranker | None = None,
+        dense: DenseRetriever | None = None,
     ) -> None:
         self.hostility = Hostility(hostility)
         self.concession = Concession(concession)
         self._swing = 0
+        self.reranker = reranker
+        self.dense = dense
+        # quote() runs once per negotiation round, so an unguarded reranker would
+        # spend a model call per round to answer a question whose inputs never
+        # change. Answered once per distinct shelf, then reused.
+        self._reranked: dict[tuple[str, tuple[str, ...]], list[CatalogItem]] = {}
+        self.rerank_calls = 0
 
     # -- selection ---------------------------------------------------------
 
+    def _narrow(
+        self, view: MerchantView, options: list[CatalogItem], grounded: bool
+    ) -> list[CatalogItem]:
+        """Let a model check retrieval's work, but only where it could change it.
+
+        Three guards, all about not spending a call that cannot matter. Nothing
+        to choose between and a hit that already shares a word with the query
+        both answer themselves; and quote() runs once per negotiation round, so
+        the same shelf asked the same question again reuses the first answer
+        rather than paying for it four more times.
+
+        What is done with the answer depends on how the candidates were found,
+        and this asymmetry is the point. Where retrieval was grounded, an empty
+        answer is overruled -- a model should not be able to unsell a product
+        the query plainly names. Where the candidates are only the embedding
+        arm's paraphrases, an empty answer stands, because "nothing here is a
+        MacBook" is exactly right and falling back to the list would put the
+        earbuds back on the table.
+        """
+        if self.reranker is None or not view.product_ref or not options:
+            return options
+        if grounded and len(options) < 2:
+            return options
+
+        key = (view.product_ref, tuple(item.product_id for item in options))
+        if key not in self._reranked:
+            self.rerank_calls += 1
+            self._reranked[key] = self.reranker.keep(view.product_ref, options)
+        kept = self._reranked[key]
+
+        if kept is None:
+            # The model did not answer. An outage is not a verdict.
+            return options
+        if kept:
+            return kept
+        return options if grounded else []
+
     def _pick(self, view: MerchantView) -> CatalogItem | None:
-        options = matching(view)
+        found, grounded = matching_detail(view, dense=self.dense)
+        options = self._narrow(view, found, grounded)
         if not options:
             return None
         if self.hostility is Hostility.SUBSTITUTION and len(options) > 1:

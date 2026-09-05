@@ -29,6 +29,7 @@ import json
 import os
 from typing import Any
 
+from ..bedrock import converse_with_tool
 from ..core.enums import Category, Condition, QuantityMode
 from .schema import ExtractedIntent
 
@@ -58,10 +59,13 @@ Rules:
   could describe a product in there. Refusing a payment arrangement is not an
   exclusion: "no subscriptions" sets recurring_allowed to false, "no EMI" sets
   emi_allowed to false, and neither belongs in exclusions.
-- product_ref is only for a product the user named specifically, with a brand or
-  a model, such as "Asics Gel-Contend 9". A phrase describing a kind of thing,
-  like "running shoes" or "a laptop", is not a product_ref: leave it null. This
-  field can block a purchase, so a wrong one refuses orders the user wanted.
+- product_ref is the product the user named, when they named one: a brand, a
+  product line or a model, such as "Asics Gel-Contend 9", "MacBook Pro M5" or
+  "ThinkPad T480". Report it exactly as they wrote it. A phrase describing a
+  kind of thing, like "running shoes" or "a laptop", names no particular
+  product: leave it null. Both mistakes cost something and neither is the safe
+  one -- a kind of thing reported as a product refuses orders the user wanted,
+  and a named product left out lets a seller send something else entirely.
 - quantity is how many separate items the user wants. Words that are part of how
   a product is normally sold are not a count: "a pair of shoes" is one pair, so
   quantity is 1, and "a set of glasses" is one set. Only count when the user
@@ -134,26 +138,24 @@ class BedrockExtractor:
         self.client = client
 
     def _converse(self, instruction: str) -> dict[str, Any]:
-        return self.client.converse(
-            modelId=self.model_id,
-            system=[{"text": SYSTEM_PROMPT}],
+        # Compelled rather than optional. A model that answers in prose when
+        # asked for a shape has to be parsed, and parsing prose is where a
+        # schema stops being a guarantee. Which spelling of "you must call this
+        # tool" a model accepts differs between them, so it is negotiated once.
+        return converse_with_tool(
+            self.client,
+            model_id=self.model_id,
+            system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": [{"text": instruction}]}],
-            toolConfig={
-                "tools": [
-                    {
-                        "toolSpec": {
-                            "name": TOOL_NAME,
-                            "description": "Report what the instruction says. You decide nothing.",
-                            "inputSchema": {"json": tool_schema()},
-                        }
-                    }
-                ],
-                # Forced rather than automatic. A model that answers in prose
-                # when asked for a shape has to be parsed, and parsing prose is
-                # where a schema stops being a guarantee.
-                "toolChoice": {"tool": {"name": TOOL_NAME}},
+            tool_spec={
+                "toolSpec": {
+                    "name": TOOL_NAME,
+                    "description": "Report what the instruction says. You decide nothing.",
+                    "inputSchema": {"json": tool_schema()},
+                }
             },
-            inferenceConfig={"maxTokens": MAX_TOKENS, "temperature": self.temperature},
+            max_tokens=MAX_TOKENS,
+            temperature=self.temperature,
         )
 
     def extract(self, instruction: str) -> ExtractedIntent:

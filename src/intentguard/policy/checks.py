@@ -25,6 +25,7 @@ from ..core.violations import (
     ViolationCode,
     explain,
 )
+from ..core.vocabulary import CATEGORY_WORDS, GENERIC_PRODUCT_WORDS
 from .normalise import to_category, to_condition
 
 
@@ -367,21 +368,64 @@ def _identity_key(text: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
 
 
+def _distinctive(reference: str, category: Category | None) -> set[str]:
+    """The words in a reference that pick out one product rather than a kind.
+
+    "boat earphone" distinguishes on "boat"; "earphone" only says which shelf to
+    look on. Dropping the shelf words is what lets a user name a product the way
+    people actually do without refusing the product they meant.
+    """
+    words = set(_identity_key(reference).split())
+    generic = set(GENERIC_PRODUCT_WORDS)
+    if category is not None:
+        generic |= set(_identity_key(Category(category).value).split())
+        generic |= set(CATEGORY_WORDS.get(Category(category).value, ()))
+    return words - generic
+
+
 def check_product_identity(ledger: IntentLedger, offer: Offer) -> list[Violation]:
     """Did the merchant ship the product the user actually named?
 
-    Only runs when the mandate pins one. This is an exact comparison after
-    folding punctuation, with no model and no similarity score, which is what
-    makes it safe to block on. Where nothing is pinned, a suspected swap is
-    semantic/'s to raise and escalates instead.
+    Only runs when the mandate pins one. No model and no similarity score: this
+    is set containment over words, which is what makes it safe to block on.
+    Where nothing is pinned, a suspected swap is semantic/'s to raise and
+    escalates instead.
+
+    The comparison used to be equality, and equality was wrong in the direction
+    that costs a user their purchase. People name products approximately -- "boat
+    earphone" for a boAt Airdopes 141, "Chelsea Boots" for the Leather Chelsea
+    Boots on the shelf -- and every one of those approximations was refused as a
+    substitution. What has to hold is that everything distinctive the user said
+    is true of what arrived; the seller may then be more specific than they were,
+    and may not be specific about something else. So "macbook pro m5" against
+    boAt Airdopes 141 still blocks: none of macbook, pro or m5 is anywhere in it.
     """
     reference = ledger.hard.product_ref
     if not reference:
         return []
 
-    wanted = _identity_key(reference)
-    offered = {_identity_key(offer.product.product_id), _identity_key(offer.product.title)}
-    if wanted in offered:
+    wanted = _distinctive(reference, ledger.hard.category)
+    if not wanted:
+        # The reference was made entirely of words naming a kind of thing, so it
+        # pins nothing and there is nothing here to check.
+        return []
+
+    # Everything the seller can be identified by, including the shelf it sits on.
+    offered = set(
+        _identity_key(
+            " ".join(
+                part
+                for part in (
+                    offer.product.product_id,
+                    offer.product.title,
+                    offer.product.brand or "",
+                    Category(offer.product.category).value if offer.product.category else "",
+                )
+                if part
+            )
+        ).split()
+    )
+    if wanted <= offered:
         return []
     return [
         _violation(

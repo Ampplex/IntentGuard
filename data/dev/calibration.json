@@ -226,8 +226,8 @@
   },
   {
     "instruction": "shoes pls under 4k",
-    "verdict": "ASK",
-    "why": "4k is not a form the parser accepts, so no defensible number"
+    "verdict": "USABLE",
+    "why": "footwear with a ₹4,000 ceiling. Previously labelled ASK with the reason '4k is not a form the parser accepts' -- that was a limitation of the parser, not an ambiguity in the instruction, and the parser now reads scale words. Relabelled because the reason for the old label no longer holds, not to make a test pass."
   },
   {
     "instruction": "need a laptop, 45000 max, refurb ok",

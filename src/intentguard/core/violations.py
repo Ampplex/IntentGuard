@@ -80,8 +80,8 @@ EXPLANATION_TEMPLATES = MappingProxyType(
             "Nothing was charged."
         ),
         ViolationCode.TOTAL_MISMATCH: (
-            "The seller's itemised charges add up to {expected}, but the amount they asked "
-            "to charge is {observed}. Those do not agree, so nothing was charged."
+            "All item prices and charges added together equal {expected}, but the seller "
+            "asked to charge {observed}. Those amounts do not match, so nothing was charged."
         ),
         ViolationCode.NEGATIVE_TOTAL: (
             "After discounts this order totals {observed}, which is less than nothing. "

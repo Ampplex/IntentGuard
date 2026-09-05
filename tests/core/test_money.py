@@ -39,8 +39,14 @@ def test_parse_rupees(text: str, expected: int) -> None:
 
 @pytest.mark.parametrize("text", ["1.005", "1299.999", "0.001"])
 def test_parse_refuses_to_round_a_stated_amount(text: str) -> None:
-    """Silently rounding a budget is the bug the integer rule exists to stop."""
-    with pytest.raises(ValueError, match="decimal places"):
+    """Silently rounding a budget is the bug the integer rule exists to stop.
+
+    The test reads "whole number of paise" rather than "decimal places" because
+    the rule is about the paisa, not the digit count: "7.50 crore" carries two
+    decimal places and is exactly 7,500,000,000 paise, while "1.005" carries
+    three and is half a paisa.
+    """
+    with pytest.raises(ValueError, match="whole number of paise"):
         parse_rupees(text)
 
 
@@ -100,3 +106,60 @@ def test_format_then_parse_round_trips(paise: int) -> None:
 def test_from_rupees_round_trips_through_display(rupees: int) -> None:
     paise = from_rupees(rupees)
     assert parse_rupees(format_paise(paise)) == paise
+
+
+# --- Indian scale words ---------------------------------------------------
+#
+# A budget written the way people here actually write one parsed as nothing at
+# all: "i want to buy rolls royce car, budget is Rs 7.50 Crore" produced no
+# ceiling, so the system asked the user how much they wanted to spend -- about
+# a figure they had just given it. For a product built on Razorpay that is not
+# an edge case.
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_paise"),
+    [
+        ("7.50 Crore", 7_500_000_000),
+        ("7.5 crore", 7_500_000_000),
+        ("1 cr", 1_000_000_000),
+        ("2 crore rupees", 2_000_000_000),
+        ("2 lakh", 200_000_00),
+        ("1.5 lakhs", 150_000_00),
+        ("2 lacs", 200_000_00),
+        ("Rs 7.50 Crore", 7_500_000_000),
+        ("₹1.25 lakh", 125_000_00),
+        ("50k", 50_000_00),
+        ("3 thousand", 3_000_00),
+        ("1 million", 1_000_000_00),
+    ],
+)
+def test_a_scale_word_multiplies_the_amount(text: str, expected_paise: int) -> None:
+    assert parse_rupees(text) == expected_paise
+
+
+def test_a_scaled_amount_is_still_exact_paise() -> None:
+    """Two decimal places on a crore is a whole number of paise, and must not be
+    refused by a rule written for two decimal places on a rupee."""
+    assert parse_rupees("7.50 crore") == parse_rupees("75000000")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "k",  # a scale word needs digits before it
+        "krupees",
+        "2 lakh crore",  # one scale word, not two
+        "0.001 rupees",  # not a whole paisa
+        "lakh 2",
+    ],
+)
+def test_what_is_still_refused(text: str) -> None:
+    with pytest.raises((ValueError, TypeError)):
+        parse_rupees(text)
+
+
+def test_no_float_enters_the_money_path() -> None:
+    """The whole point of the integer-paise rule, checked on the new path too."""
+    for text in ("7.50 crore", "1.5 lakhs", "50k"):
+        assert isinstance(parse_rupees(text), int)

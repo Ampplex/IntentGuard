@@ -19,6 +19,7 @@ from pydantic import Field, field_validator, model_validator
 
 from .base import StrictModel
 from .enums import Category, Condition, LedgerStatus, QuantityMode
+from .money import Paise
 
 T = TypeVar("T")
 
@@ -50,7 +51,7 @@ class HardConstraints(StrictModel):
     """
 
     category: Category
-    max_total_paise: int = Field(ge=0)
+    max_total_paise: Paise = Field(ge=0)
     currency: str = "INR"
 
     @field_validator("currency")

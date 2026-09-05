@@ -5,7 +5,9 @@ import react from "@vitejs/plugin-react";
 // endpoints and the demo has no second thing to start.
 export default defineConfig({
   plugins: [react()],
-  base: "/app/",
+  // Served from a sub-path locally, where FastAPI mounts the build under /app/,
+  // and from the root on Vercel, where the CDN serves the directory itself.
+  base: process.env.VERCEL ? "/" : "/app/",
   build: { outDir: "../src/intentguard/api/static/app", emptyOutDir: true },
   server: { proxy: { "/api": "http://127.0.0.1:8000" } },
 });

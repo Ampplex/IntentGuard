@@ -89,6 +89,12 @@ def test_exclusions_are_read_from_a_negative_instruction() -> None:
     assert "leather" in EXTRACT.extract("Buy boots under 6000, nothing in leather.").exclusions
 
 
+def test_explicit_material_and_category_are_a_search_reference_not_an_exclusion() -> None:
+    result = EXTRACT.extract("I want to buy leather shoes for Rs 6000")
+    assert result.product_ref == "leather shoes"
+    assert result.exclusions == []
+
+
 def test_a_no_subscription_instruction_is_not_read_as_an_exclusion_term() -> None:
     """ "no subscriptions" constrains recurrence, it does not exclude a material."""
     result = EXTRACT.extract("Buy running shoes under 5000, no subscriptions.")

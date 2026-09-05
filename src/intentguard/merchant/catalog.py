@@ -25,6 +25,8 @@ class CatalogItem(StrictModel):
     materials: tuple[str, ...] = ()
 
 
+from .search import DenseRetriever, distinctive, search  # noqa: E402  (after CatalogItem)
+
 CATALOG: tuple[CatalogItem, ...] = (
     CatalogItem(
         product_id="sku_shoe_01",
@@ -153,18 +155,65 @@ CATALOG: tuple[CatalogItem, ...] = (
 )
 
 
-def matching(view) -> list[CatalogItem]:
+def search_names_a_product(query: str, category_value: str | None) -> bool:
+    """Did the query name a product, as opposed to a kind of thing?
+
+    Only a named product earns an empty answer. "running shoes" names a kind,
+    and the merchant is right to offer what it has in that category.
+    """
+    return bool(distinctive(query, category_value))
+
+
+def matching_detail(view, dense: DenseRetriever | None = None) -> tuple[list[CatalogItem], bool]:
+    """What the catalog offers for a view, and whether retrieval is sure of it.
+
+    The flag is the difference between a hit that shares a distinctive word with
+    the query and one only the embedding arm reached. Both are worth returning;
+    only the first is worth acting on without asking.
+    """
+    items = matching(view, dense=dense)
+    if not view.product_ref or not items:
+        return items, True
+    category_value = view.category.value if view.category else None
+    hits = search(view.product_ref, items, category_value=category_value, dense=dense)
+    if not hits:
+        # The reference named a kind of thing, so the category listing stands.
+        return items, True
+    return items, any(hit.grounded for hit in hits)
+
+
+def matching(view, dense: DenseRetriever | None = None) -> list[CatalogItem]:
     """Everything in the catalog that fits the view, cheapest first.
 
     Note what is not consulted: there is no ceiling to filter against, because
     the merchant was never told one.
+
+    Where the view names a product, hybrid retrieval answers instead of an exact
+    title match, and is allowed to answer with nothing. That last part is the
+    change that matters: the previous lookup fell through to "cheapest in the
+    category" on a miss, so a request for a MacBook was answered with earbuds
+    and a request for Chelsea Boots with a different shoe. A merchant that
+    cannot say "we do not stock that" will always say something else instead.
     """
     found = [item for item in CATALOG if item.category is view.category]
     if view.condition is not None:
         found = [item for item in found if item.condition is view.condition]
+
     if view.product_ref:
-        wanted = view.product_ref.strip().lower()
-        exact = [i for i in found if wanted in (i.title.lower(), i.product_id.lower())]
-        if exact:
-            return exact
+        category_value = view.category.value if view.category else None
+        hits = search(view.product_ref, found, category_value=category_value, dense=dense)
+        grounded = [hit.item for hit in hits if hit.grounded]
+        if grounded:
+            return grounded
+        if hits:
+            # Only the dense arm reached these: a paraphrase, not a shared word.
+            # Returned so a reranker can confirm or reject them, never acted on
+            # by similarity alone.
+            return [hit.item for hit in hits]
+        if search_names_a_product(view.product_ref, category_value):
+            # A named product, and nothing in the catalog answers to it. Offering
+            # the cheapest alternative here is the substitution this project
+            # exists to catch, performed by the seller's own search.
+            return []
+
     return sorted(found, key=lambda item: item.price_paise)

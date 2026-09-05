@@ -1,0 +1,32 @@
+# Nothing secret, local, or large is uploaded to the build.
+#
+# .env is the one that matters. Credentials reach the deployment as encrypted
+# environment variables set through the CLI, never as a file in the bundle --
+# a file would be readable by anything that can read the filesystem of the
+# function, and would sit in the deployment's source listing.
+.env
+.env.*
+*.pem
+*.key
+
+# Local state that either does not belong on a server or is rebuilt there.
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+node_modules
+web/node_modules
+
+# The audit trail and benchmark outputs are generated, and the audit log can
+# contain the details of real decisions.
+data/api-audit.jsonl
+
+# Documents and scratch space.
+*.pdf
+.DS_Store
+
+# The API runs on EC2. Leaving the function here makes Vercel detect FastAPI and
+# route requests into a Python runtime that no longer has a job.
+api/
+pyproject.toml

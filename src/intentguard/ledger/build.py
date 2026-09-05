@@ -19,8 +19,9 @@ from ..core.base import StrictModel
 from ..core.enums import Category, Condition, LedgerStatus, QuantityMode
 from ..core.intent import HardConstraints, IntentLedger, SoftPreferences
 from ..core.money import format_paise, parse_rupees
+from ..core.vocabulary import CATEGORY_WORDS, GENERIC_PRODUCT_WORDS
 from .confidence import DEFAULT_THRESHOLD, score_extraction
-from .extractor import CATEGORY_WORDS
+from .extractor import RuleBasedExtractor, material_product_ref
 from .schema import ExtractedIntent
 
 # Without these two, there is no mandate to speak of: nothing to spend against
@@ -64,42 +65,6 @@ def _ceiling_paise(extracted: ExtractedIntent) -> int | None:
 # Words that describe a kind of thing rather than name one. A reference built
 # only from these is a category, and pinning a mandate to a category blocks every
 # offer in it.
-_GENERIC_WORDS = frozenset(
-    {
-        "a",
-        "an",
-        "the",
-        "of",
-        "for",
-        "pair",
-        "set",
-        "new",
-        "some",
-        "any",
-        "item",
-        "items",
-        "product",
-        "products",
-        "thing",
-        "things",
-        "one",
-        "unit",
-        "units",
-        "running",
-        "wireless",
-        "electric",
-        "cotton",
-        "leather",
-        "steel",
-        "plain",
-        "small",
-        "medium",
-        "large",
-        "cheap",
-        "good",
-        "best",
-    }
-)
 
 
 def meaningful_product_ref(raw: str | None, category: Category | None) -> str | None:
@@ -123,12 +88,183 @@ def meaningful_product_ref(raw: str | None, category: Category | None) -> str | 
     if not tokens:
         return None
 
-    generic = set(_GENERIC_WORDS)
+    generic = set(GENERIC_PRODUCT_WORDS)
     if category is not None:
         generic |= set(re.split(r"[^a-z0-9]+", Category(category).value))
         generic |= set(CATEGORY_WORDS.get(Category(category).value, ()))
 
     return raw.strip() if tokens - generic else None
+
+
+_SCAFFOLD_WORDS = frozenset(
+    {
+        # who is asking, and what they are doing
+        "i",
+        "we",
+        "me",
+        "my",
+        "us",
+        "our",
+        "you",
+        "want",
+        "wants",
+        "wanted",
+        "need",
+        "needs",
+        "needed",
+        "like",
+        "would",
+        "buy",
+        "buying",
+        "get",
+        "order",
+        "purchase",
+        "please",
+        "kindly",
+        "find",
+        "look",
+        "looking",
+        # how much they will spend
+        "budget",
+        "budgeted",
+        "limit",
+        "limited",
+        "max",
+        "maximum",
+        "spend",
+        "spending",
+        "under",
+        "below",
+        "upto",
+        "up",
+        "to",
+        "at",
+        "most",
+        "around",
+        "about",
+        "within",
+        "cost",
+        "costs",
+        "costing",
+        "price",
+        "priced",
+        "total",
+        "rs",
+        "rupees",
+        "rupee",
+        "inr",
+        # judgements that describe nothing on any shelf
+        "decent",
+        "nice",
+        "quality",
+        "basic",
+        "simple",
+        "proper",
+        "solid",
+        "expensive",
+        "pricey",
+        "affordable",
+        "reasonable",
+        "better",
+        "great",
+        "nothing",
+        "anything",
+        "something",
+        "too",
+        "very",
+        "quite",
+        "really",
+        "much",
+        # payment arrangements, which have fields of their own
+        "subscription",
+        "subscriptions",
+        "emi",
+        "recurring",
+        "instalment",
+        "instalments",
+        "installment",
+        "installments",
+        "trial",
+        "addon",
+        "addons",
+        # connective tissue
+        "and",
+        "or",
+        "but",
+        "with",
+        "without",
+        "no",
+        "not",
+        "is",
+        "are",
+        "be",
+        "that",
+        "this",
+        "it",
+        "if",
+        "then",
+        "also",
+    }
+)
+
+
+def recovered_product_ref(
+    instruction: str,
+    category: Category | None,
+    budget_text: str | None,
+    quantity: int | None = None,
+) -> str | None:
+    """A named product recovered from the user's own words.
+
+    product_ref is the field that lets a substitution *block*, and leaving it to
+    the model alone means an extraction miss opens a payment path. It did: asked
+    for a "macbook pro m5" the model returned null, so nothing was pinned, and
+    the engine allowed a pair of earbuds -- the only comparison left was the
+    merchant's opening move against the merchant's own delivery, and those
+    agreed. A prompt is a request; this is a rule.
+
+    The test for "named one product rather than a kind of thing" is a model
+    designation: a token carrying a digit, alongside a word, once the digits
+    that are a budget or a count have been removed. "macbook pro m5"
+    and "iphone 15 pro" name a product; "a yoga mat" and "running shoes" name a
+    kind, and pinning on those would refuse every offer in the category. This is
+    deliberately narrower than the category word lists, which are incomplete --
+    "yoga" and "mat" are absent from them, and a filter that trusted them pinned
+    "a yoga mat" and would have blocked the one the merchant actually stocks.
+
+    The limit of it, stated plainly: "buy me a MacBook Pro" carries no model
+    number, so nothing is recovered and that case still rests on the model
+    reporting product_ref itself.
+    """
+    if not instruction or not instruction.strip():
+        return None
+
+    # The budget is the user's own words too, and its digits would otherwise
+    # read as a model number. Removed by the text the extractor reported.
+    text = instruction
+    if budget_text:
+        text = re.sub(re.escape(budget_text), " ", text, flags=re.IGNORECASE)
+
+    # A count is not a model number. "buy 3 shirts" would otherwise pin "3
+    # shirts" and refuse the shirts the user asked for.
+    counted = str(quantity) if quantity and quantity > 1 else None
+
+    words = [
+        word
+        for word in re.findall(r"[A-Za-z0-9]+", text)
+        if word.lower() not in _SCAFFOLD_WORDS
+        and word.lower() not in GENERIC_PRODUCT_WORDS
+        and word != counted
+    ]
+    if not words:
+        return None
+
+    names_a_model = any(any(ch.isdigit() for ch in word) for word in words)
+    names_a_thing = any(word.isalpha() for word in words)
+    if not (names_a_model and names_a_thing):
+        return None
+
+    return meaningful_product_ref(" ".join(words), category)
 
 
 def _enum_or_none(enum_type, raw: str | None):
@@ -169,6 +305,22 @@ def build_ledger(
     intent_id: str | None = None,
 ) -> LedgerProposal:
     """Turn an extraction into a mandate, or into a question."""
+    recovered_material = material_product_ref(instruction)
+    deterministic = RuleBasedExtractor().extract(instruction)
+    if recovered_material or deterministic.exclusions:
+        material = recovered_material.split(maxsplit=1)[0] if recovered_material else None
+        explicit_exclusions = {term.casefold() for term in deterministic.exclusions}
+        exclusions = tuple(
+            term
+            for term in extracted.exclusions
+            if not (material and term.casefold() == material and material not in explicit_exclusions)
+        )
+        extracted = extracted.model_copy(
+            update={
+                "product_ref": extracted.product_ref or recovered_material,
+                "exclusions": exclusions,
+            }
+        )
     confidence = score_extraction(instruction, extracted)
     ceiling = _ceiling_paise(extracted)
     category = _enum_or_none(Category, extracted.category)
@@ -200,7 +352,12 @@ def build_ledger(
         recurring_allowed=extracted.recurring_allowed,
         emi_allowed=extracted.emi_allowed,
         addons_allowed=extracted.addons_allowed,
-        product_ref=meaningful_product_ref(extracted.product_ref, category),
+        product_ref=(
+            meaningful_product_ref(extracted.product_ref, category)
+            or recovered_product_ref(
+                instruction, category, extracted.max_total_text, extracted.quantity
+            )
+        ),
         exclusions=tuple(extracted.exclusions),
     )
     ledger = IntentLedger(

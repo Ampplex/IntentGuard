@@ -27,7 +27,7 @@ import pytest
 
 from intentguard.ledger import RuleBasedExtractor, build_ledger
 from intentguard.ledger.build import REQUIRED_FIELDS
-from intentguard.ledger.confidence import DEFAULT_THRESHOLD
+from intentguard.ledger.confidence import DEFAULT_THRESHOLD, score_ceiling
 
 CASES = json.loads(
     (Path(__file__).resolve().parents[2] / "data" / "dev" / "calibration.json").read_text(
@@ -127,3 +127,47 @@ def test_each_case_lands_correctly(instruction: str, verdict: str, score: float)
     assert (score >= DEFAULT_THRESHOLD) == (verdict == "USABLE"), (
         f"{instruction!r} scored {score:.2f}, expected {verdict}"
     )
+
+
+# --- a number in a product name is not a second budget --------------------
+#
+# Found in the running app: "Buy me a boAt Airdopes 141, budget 3500 rupees"
+# scored 0.40 and the agent asked the shopper how much they wanted to spend,
+# about a figure they had just given it. The competing-amounts rule had counted
+# the model number as a rival sum.
+
+
+@pytest.mark.parametrize(
+    ("instruction", "stated", "product_ref"),
+    [
+        (
+            "Buy me a boAt Airdopes 141, budget 3500 rupees. No subscriptions.",
+            "3500 rupees",
+            "boAt Airdopes 141",
+        ),
+        ("Buy me a ThinkPad T480, budget 45000 rupees", "45000 rupees", "ThinkPad T480"),
+        ("Buy me a Nike Revolution 7, budget 5000 rupees", "5000 rupees", "Nike Revolution 7"),
+        ("buy me a Sony WH-1000XM5, budget 30000 rupees", "30000 rupees", "Sony WH-1000XM5"),
+    ],
+)
+def test_a_model_number_does_not_cost_the_ceiling_its_confidence(
+    instruction: str, stated: str, product_ref: str
+) -> None:
+    score = score_ceiling(instruction, stated, 1, False, "exact", product_ref)
+    assert score >= DEFAULT_THRESHOLD, f"{instruction!r} scored {score:.2f}"
+
+
+def test_two_real_sums_are_still_punished() -> None:
+    """The rule this softens is a good one: it must survive the fix."""
+    score = score_ceiling(
+        "budget 15000, but 16000 is fine if it is 4K", "15000", 1, False, "exact", None
+    )
+    assert score < DEFAULT_THRESHOLD
+
+
+def test_the_stated_limit_is_never_excluded_by_the_product_name() -> None:
+    """A product whose name happens to contain the budget must not hide it."""
+    score = score_ceiling(
+        "buy me a Model 3500, budget 3500 and 9000 rupees", "3500", 1, False, "exact", "Model 3500"
+    )
+    assert score < DEFAULT_THRESHOLD, "two sums are still two sums"

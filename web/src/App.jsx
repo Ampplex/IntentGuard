@@ -1,362 +1,281 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import * as api from "./api";
+import Chat from "./Chat.jsx";
+import Landing from "./Landing.jsx";
+import Shop from "./Shop.jsx";
+import Stress from "./Stress.jsx";
 import { rupees } from "./format";
 
-const EXAMPLES = [
-  {
-    label: "Clean purchase",
-    instruction: "Buy me a pair of new running shoes, budget 5000 rupees. No subscriptions.",
-    hostility: "none",
-  },
-  {
-    label: "Hidden subscription",
-    instruction: "Buy me a pair of new running shoes, budget 5000 rupees. No subscriptions.",
-    hostility: "trial_subscription",
-  },
-  {
-    label: "Shipping after the quote",
-    instruction: "Buy me a pair of new running shoes, budget 4300 rupees.",
-    hostility: "hidden_shipping",
-  },
-  {
-    label: "Product swapped",
-    instruction: "Buy me a pair of new running shoes, budget 5000 rupees.",
-    hostility: "substitution",
-  },
-  {
-    label: "Injection in the description",
-    instruction: "Buy me a pair of new running shoes, budget 5000 rupees.",
-    hostility: "injection",
-  },
-  {
-    label: "Nothing to go on",
-    instruction: "Get me a decent laptop, nothing too pricey.",
-    hostility: "none",
-  },
+const TEST_CARD = [
+  ["Card", "4100 2800 0000 1007"],
+  ["CVV", "123"],
+  ["Expiry", "12/26"],
+  ["Name", "any name"],
+  ["UPI", "test@razorpay"],
 ];
 
-const HOSTILITIES = [
-  ["none", "honest"],
-  ["hidden_shipping", "adds shipping after the quote"],
-  ["trial_subscription", "free trial that converts"],
-  ["paid_addon", "paid add-on"],
-  ["currency_swap", "quotes in another currency"],
-  ["substitution", "swaps the product"],
-  ["quantity_inflation", "ships more than asked"],
-  ["total_mismatch", "total disagrees with the items"],
-  ["unmodelled_field", "term the schema has no slot for"],
-  ["injection", "prompt injection in the description"],
-  ["excluded_material", "uses an excluded material"],
-];
-
-function Step({ n, title, state, children }) {
+function Shield() {
   return (
-    <div className={`step ${state === "pending" ? "pending" : ""}`}>
-      <div className="step-head">
-        <span className="step-n">{n}</span>
-        <span className="step-title">{title}</span>
-        {state === "running" && <span className="chip muted spin">running</span>}
-        {state && !["pending", "running"].includes(state) && (
-          <span className={`chip ${state}`}>{state}</span>
-        )}
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 2.5 4.5 5.6v6.1c0 4.6 3.2 8.4 7.5 9.8 4.3-1.4 7.5-5.2 7.5-9.8V5.6L12 2.5Z"
+        stroke="#fff"
+        strokeWidth="1.9"
+        strokeLinejoin="round"
+      />
+      <path
+        d="m8.8 12 2.3 2.3 4.1-4.5"
+        stroke="#fff"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** Offered before Razorpay opens, because its window covers the page. */
+function CardDialog({ order, copied, onCopy, onContinue, onCancel }) {
+  if (!order) return null;
+  return (
+    <div
+      className="scrim"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="card-title"
+    >
+      <div className="dialog">
+        <div className="dialog-head">
+          <h2 id="card-title">Authorised. Take the test card first.</h2>
+          <p>
+            Razorpay&rsquo;s window will cover this page, so copy what you need
+            now. {rupees(order.amount)} on order{" "}
+            <strong>{order.order_id}</strong>.
+          </p>
+        </div>
+        <div className="dialog-body">
+          {TEST_CARD.map(([label, value]) => (
+            <div className="cardrow" key={label}>
+              <span className="cardlabel">{label}</span>
+              <span className="cardvalue">{value}</span>
+              <button
+                className="copy"
+                onClick={() => onCopy(label, value)}
+                aria-label={`Copy ${label}`}
+              >
+                {copied === label ? "copied" : "copy"}
+              </button>
+            </div>
+          ))}
+          <p className="fineprint" style={{ marginTop: 10 }}>
+            Test mode. Any future expiry and any CVV are accepted, and no real
+            money moves.
+          </p>
+        </div>
+        <div className="dialog-foot">
+          <button className="btn btn-quiet btn-sm" onClick={onCancel}>
+            Not now
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={onContinue}>
+            Continue to Razorpay
+          </button>
+        </div>
       </div>
-      {children && <div className="step-body">{children}</div>}
     </div>
   );
 }
 
+/** Which view a hash names. One definition, used by the initial state and
+    the hashchange handler -- they disagreed, and #stress reached neither. */
+function readView() {
+  const hash = window.location.hash;
+  if (hash === "#shop") return "shop";
+  if (hash === "#stress") return "stress";
+  return "landing";
+}
+
 export default function App() {
-  const [instruction, setInstruction] = useState(EXAMPLES[1].instruction);
-  const [hostility, setHostility] = useState(EXAMPLES[1].hostility);
-  const [concession, setConcession] = useState("haggle");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
+  const [view, setView] = useState(readView);
+  const [catalog, setCatalog] = useState([]);
   const [config, setConfig] = useState(null);
-  const [mandate, setMandate] = useState(null);
-  const [deal, setDeal] = useState(null);
-  const [verdict, setVerdict] = useState(null);
-  const [payment, setPayment] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [seed, setSeed] = useState(null);
+  const [order, setOrder] = useState(null);
+  const [copied, setCopied] = useState(null);
+  const [note, setNote] = useState(null);
 
   useEffect(() => {
-    api.getConfig().then(setConfig).catch(() => setConfig(null));
+    api
+      .getConfig()
+      .then(setConfig)
+      .catch(() => setConfig(null));
+    api
+      .getCatalog()
+      .then(setCatalog)
+      .catch(() => setCatalog([]));
+    const onHash = () => setView(readView());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  function reset() {
-    setError(null);
-    setMandate(null);
-    setDeal(null);
-    setVerdict(null);
-    setPayment(null);
-  }
+  const start = useCallback(() => {
+    window.location.hash = "#shop";
+    setView("shop");
+    window.scrollTo(0, 0);
+  }, []);
 
-  async function run() {
-    reset();
-    setBusy(true);
-    try {
-      const extracted = await api.extract(instruction);
-      setMandate(extracted);
-      if (!extracted.ledger) return;
-
-      const negotiated = await api.negotiate(extracted.ledger, hostility, concession);
-      setDeal(negotiated);
-      if (!negotiated.offer) return;
-
-      const { status, payload } = await api.createOrder(
-        extracted.ledger,
-        negotiated.offer,
-        negotiated.negotiated_product,
+  const openCheckout = useCallback(
+    (o) => {
+      if (!window.Razorpay || !config) {
+        setNote("Razorpay checkout did not load.");
+        return;
+      }
+      const rzp = new window.Razorpay({
+        key: config.key_id,
+        order_id: o.order_id,
+        amount: o.amount,
+        currency: o.currency,
+        name: "IntentGuard",
+        description: "Authorised by the intent gate",
+        theme: { color: "#305eff" },
+        handler: async (response) => {
+          const { status, payload } = await api.verifyPayment(response);
+          setNote(
+            status === 200 && payload.verified
+              ? `Paid and verified. Payment ${payload.payment_id}.`
+              : payload.detail || "The signature did not verify.",
+          );
+        },
+        modal: {
+          ondismiss: () => setNote("You closed checkout. Nothing was charged."),
+        },
+      });
+      rzp.on("payment.failed", (r) =>
+        setNote(r.error?.description || "Razorpay reported a failure."),
       );
-      setVerdict({ status, ...payload });
-      if (status === 200) openCheckout(payload);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function openCheckout(order) {
-    if (!window.Razorpay || !config) {
-      setError("Razorpay checkout did not load.");
-      return;
-    }
-    const rzp = new window.Razorpay({
-      key: config.key_id,
-      order_id: order.order_id,
-      amount: order.amount,
-      currency: order.currency,
-      name: "IntentGuard",
-      description: "Authorised by the intent gate",
-      theme: { color: "#0f5f6b" },
-      handler: async (response) => {
-        const { status, payload } = await api.verifyPayment(response);
-        setPayment(
-          status === 200 && payload.verified
-            ? { ok: true, id: payload.payment_id }
-            : { ok: false, detail: payload.detail || "The signature did not verify." },
-        );
-      },
-      modal: {
-        ondismiss: () =>
-          setPayment({ ok: false, detail: "You closed checkout. Nothing was charged." }),
-      },
-    });
-    rzp.on("payment.failed", (r) =>
-      setPayment({ ok: false, detail: r.error?.description || "Razorpay reported a failure." }),
-    );
-    rzp.open();
-  }
-
-  const decision = verdict?.decision ?? (verdict?.order_id ? "ALLOW" : null);
+      rzp.open();
+    },
+    [config],
+  );
 
   return (
-    <div className="wrap">
-      <header className="mast">
-        <p className="eyebrow">Razorpay AI Buildathon · Track 01</p>
-        <h1>IntentGuard</h1>
-        <p className="standfirst">
-          An AI buyer negotiates with a merchant, and a deterministic gate decides whether the
-          final cart still matches what the user authorised — before Razorpay is called.
-        </p>
-        <div className="badges">
-          <span className="chip on">Razorpay test mode</span>
-          {mandate?.backend && <span className="chip muted">{mandate.backend}</span>}
-          <span className="chip muted">no model in the decision path</span>
+    <>
+      <header className="nav">
+        <div className="wrap nav-in">
+          <a
+            className="logo"
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              window.location.hash = "";
+              setView("landing");
+            }}
+          >
+            <span className="logo-mark">
+              <Shield />
+            </span>
+            <b>IntentGuard</b>
+          </a>
+          <div className="nav-right">
+            <span className="tag">
+              <span className="dot" />
+              Razorpay test mode
+            </span>
+            {view === "landing" ? (
+              <button className="btn btn-dark btn-sm" onClick={start}>
+                Start shopping
+              </button>
+            ) : (
+              <button
+                className="btn btn-quiet btn-sm"
+                onClick={() => setChatOpen(true)}
+              >
+                Open agent
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
-      <div className="grid">
-        <div>
-          <div className="card">
-            <h2>What the user asked for</h2>
-            <textarea
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-              spellCheck="false"
+      {view === "stress" ? (
+        <Stress />
+      ) : view === "landing" ? (
+        <Landing onStart={start} />
+      ) : (
+        <Shop
+          catalog={catalog}
+          onAsk={(instruction) => {
+            setSeed(instruction);
+            setChatOpen(true);
+          }}
+        />
+      )}
+
+      {view === "shop" && !chatOpen && (
+        <button className="chat-fab" onClick={() => setChatOpen(true)}>
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path
+              d="M3 5.5A2.5 2.5 0 0 1 5.5 3h9A2.5 2.5 0 0 1 17 5.5v5A2.5 2.5 0 0 1 14.5 13H8l-4 3.5V13H5.5A2.5 2.5 0 0 1 3 10.5Z"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinejoin="round"
             />
-            <div className="examples">
-              {EXAMPLES.map((ex) => (
-                <button
-                  key={ex.label}
-                  type="button"
-                  onClick={() => {
-                    setInstruction(ex.instruction);
-                    setHostility(ex.hostility);
-                    reset();
-                  }}
-                >
-                  {ex.label}
-                </button>
-              ))}
+          </svg>
+          Ask the agent
+        </button>
+      )}
+
+      <Chat
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        seed={seed}
+        onOrder={(payload) => setOrder(payload)}
+      />
+
+      <CardDialog
+        order={order}
+        copied={copied}
+        onCopy={async (label, value) => {
+          try {
+            await navigator.clipboard.writeText(value);
+            setCopied(label);
+          } catch {
+            setCopied(null);
+          }
+        }}
+        onContinue={() => {
+          const o = order;
+          setOrder(null);
+          openCheckout(o);
+        }}
+        onCancel={() => {
+          setOrder(null);
+          setNote("You stopped before checkout. Nothing was charged.");
+        }}
+      />
+
+      {note && (
+        <div
+          className="scrim"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setNote(null)}
+        >
+          <div className="dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-head">
+              <h2 style={{ color: "var(--navy)" }}>Payment</h2>
+              <p>{note}</p>
             </div>
-
-            <label htmlFor="hostility">How the merchant behaves</label>
-            <select
-              id="hostility"
-              value={hostility}
-              onChange={(e) => setHostility(e.target.value)}
-            >
-              {HOSTILITIES.map(([value, text]) => (
-                <option key={value} value={value}>
-                  {text}
-                </option>
-              ))}
-            </select>
-
-            <label htmlFor="concession">How it negotiates</label>
-            <select
-              id="concession"
-              value={concession}
-              onChange={(e) => setConcession(e.target.value)}
-            >
-              <option value="haggle">haggles a little each round</option>
-              <option value="meet">meets the target</option>
-              <option value="stubborn">never moves</option>
-              <option value="oscillating">moves without converging</option>
-            </select>
-
-            <button onClick={run} disabled={busy}>
-              {busy ? "Running…" : "Run it"}
-            </button>
-            {error && <p className="err">{error}</p>}
-
-            <div className="hint">
-              Test card 4100 2800 0000 1007 · CVV 123 · expiry 12/26
-              <br />
-              Test UPI test@razorpay
+            <div className="dialog-foot">
+              <button
+                className="btn btn-dark btn-sm"
+                onClick={() => setNote(null)}
+              >
+                Close
+              </button>
             </div>
-            <p className="note">
-              The page never sends an amount. The server derives it from the decision.
-            </p>
           </div>
         </div>
-
-        <div className="card tight">
-          <Step
-            n="1"
-            title="Read the instruction"
-            state={!mandate ? "pending" : mandate.ledger ? "ALLOW" : "ESCALATE"}
-          >
-            {mandate ? (
-              mandate.ledger ? (
-                <dl className="kv">
-                  <dt>ceiling</dt>
-                  <dd>{rupees(mandate.ledger.hard.max_total_paise)}</dd>
-                  <dt>category</dt>
-                  <dd>{mandate.ledger.hard.category}</dd>
-                  <dt>condition</dt>
-                  <dd>{mandate.ledger.hard.condition ?? "any"}</dd>
-                  <dt>recurring</dt>
-                  <dd>{mandate.ledger.hard.recurring_allowed ? "allowed" : "not allowed"}</dd>
-                  <dt>read by</dt>
-                  <dd>{mandate.backend}</dd>
-                </dl>
-              ) : (
-                <>
-                  <p>No defensible mandate could be built, so nothing was spent.</p>
-                  <div className="finding ESCALATE">
-                    <div className="code">ASKING THE USER</div>
-                    <p>{mandate.question}</p>
-                  </div>
-                </>
-              )
-            ) : (
-              "waiting"
-            )}
-          </Step>
-
-          <Step
-            n="2"
-            title="Negotiate, without showing the ceiling"
-            state={!deal ? "pending" : "ALLOW"}
-          >
-            {deal ? (
-              <>
-                <dl className="kv">
-                  <dt>merchant sees the ceiling</dt>
-                  <dd>{deal.ceiling_visible_to_merchant ? "yes" : "no"}</dd>
-                  <dt>buyer aims at</dt>
-                  <dd>{rupees(deal.target_paise)}</dd>
-                  <dt>ended</dt>
-                  <dd>
-                    {deal.ending} after {deal.exchanges} exchange
-                    {deal.exchanges === 1 ? "" : "s"}
-                  </dd>
-                </dl>
-                <div className="rounds">
-                  {deal.rounds.map((r) => (
-                    <div key={r.number} className={`round ${r.note === "final offer" ? "final" : ""}`}>
-                      <span className="n">r{r.number}</span>
-                      <span>{rupees(r.quoted_total_paise)}</span>
-                      <span className="ask">
-                        {r.asked_for_paise ? `asked ${rupees(r.asked_for_paise)}` : r.note}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              "waiting"
-            )}
-          </Step>
-
-          <Step n="3" title="Decide" state={decision ?? "pending"}>
-            {verdict ? (
-              verdict.status === 409 ? (
-                <>
-                  {verdict.violations.map((v) => (
-                    <div key={v.code} className="finding BLOCK">
-                      <div className="code">{v.code}</div>
-                      <p>{v.explanation}</p>
-                    </div>
-                  ))}
-                  <p className="note">
-                    Razorpay was not called. Not called and rolled back — not called.
-                  </p>
-                </>
-              ) : (
-                <dl className="kv">
-                  <dt>order</dt>
-                  <dd>{verdict.order_id}</dd>
-                  <dt>amount</dt>
-                  <dd>{rupees(verdict.amount)}</dd>
-                  <dt>receipt</dt>
-                  <dd>{verdict.receipt}</dd>
-                  <dt>offer hash</dt>
-                  <dd style={{ wordBreak: "break-all" }}>{verdict.offer_hash}</dd>
-                </dl>
-              )
-            ) : (
-              "waiting"
-            )}
-          </Step>
-
-          <Step
-            n="4"
-            title="Pay and verify the signature"
-            state={!payment ? "pending" : payment.ok ? "ALLOW" : "BLOCK"}
-          >
-            {payment ? (
-              payment.ok ? (
-                <>
-                  <p>
-                    Razorpay's signature checks out against the order, so this payment is
-                    genuine rather than merely reported.
-                  </p>
-                  <dl className="kv">
-                    <dt>payment</dt>
-                    <dd>{payment.id}</dd>
-                  </dl>
-                </>
-              ) : (
-                <p>{payment.detail}</p>
-              )
-            ) : (
-              "waiting"
-            )}
-          </Step>
-        </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

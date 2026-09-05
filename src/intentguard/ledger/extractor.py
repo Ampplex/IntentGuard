@@ -16,138 +16,14 @@ it cannot be argued into arithmetic.
 from __future__ import annotations
 
 import re
+import string
 from typing import Protocol
 
+from ..core.money import parse_rupees
+from ..core.vocabulary import CATEGORY_WORDS
 from .schema import ExtractedIntent
 
 # The merchant taxonomy, reached from the words people actually use.
-CATEGORY_WORDS: dict[str, tuple[str, ...]] = {
-    "footwear": (
-        "shoe",
-        "shoes",
-        "sneaker",
-        "sneakers",
-        "boot",
-        "boots",
-        "sandal",
-        "sandals",
-        "trainers",
-        "heels",
-        "slippers",
-    ),
-    "electronics": (
-        "laptop",
-        "phone",
-        "headphone",
-        "headphones",
-        "earphone",
-        "earphones",
-        "camera",
-        "monitor",
-        "speaker",
-        "tablet",
-        "charger",
-        "keyboard",
-        "mouse",
-        "smartwatch",
-        "television",
-        "tv",
-        "printer",
-        "router",
-    ),
-    "apparel": (
-        "shirt",
-        "shirts",
-        "tshirt",
-        "t-shirt",
-        "jacket",
-        "jeans",
-        "dress",
-        "kurta",
-        "saree",
-        "socks",
-        "trousers",
-        "sweater",
-    ),
-    "home_kitchen": (
-        "kettle",
-        "blender",
-        "lamp",
-        "chair",
-        "table",
-        "mattress",
-        "sofa",
-        "refrigerator",
-        "fridge",
-        "cooker",
-        "purifier",
-        "towel",
-        "clock",
-        "fan",
-        "grinder",
-        "mug",
-        "pillow",
-        "organiser",
-        "organizer",
-    ),
-    "books": (
-        "book",
-        "books",
-        "novel",
-        "paperback",
-        "textbook",
-        "notebook",
-        "notebooks",
-        "paper",
-        "ream",
-        "reams",
-    ),
-    "grocery": (
-        "grocery",
-        "groceries",
-        "protein",
-        "coffee",
-        "tea",
-        "rice",
-        "snack",
-        "lunch",
-        "dinner",
-    ),
-    "beauty": (
-        "serum",
-        "perfume",
-        "soap",
-        "shampoo",
-        "moisturiser",
-        "moisturizer",
-        "lipstick",
-        "sunscreen",
-    ),
-    "sports": (
-        "bat",
-        "racquet",
-        "racket",
-        "yoga",
-        "treadmill",
-        "dumbbell",
-        "helmet",
-        "bicycle",
-        "bottle",
-        "pump",
-        "cricket",
-    ),
-    "toys": ("toy", "toys", "puzzle", "lego", "chess", "board game"),
-    "accessories": (
-        "bag",
-        "backpack",
-        "wallet",
-        "belt",
-        "watch strap",
-        "suitcase",
-        "phone case",
-        "case",
-    ),
-}
 
 CONDITION_WORDS = {
     "new": "new",
@@ -162,16 +38,28 @@ CONDITION_WORDS = {
     "open-box": "open_box",
 }
 
+# The scale words people actually use. This parser is the fallback when the
+# model is throttled, and a fallback that cannot read "20k" or "2 lakh" turns a
+# provider hiccup into "please confirm how much you want to spend" -- which is
+# what the stress run showed. parse_rupees() already understands these; the
+# pattern just has to capture them.
+# A bare number under a hundred rupees reads as a count, not a price:
+# "up to 3 reams, budget 1500" has two numbers and only one is money.
+_COUNT_CEILING_PAISE = 100_00
+
+_SCALE = r"(?:\s*(?:crores?|lakhs?|lacs?|thousand|million|billion|cr|bn|mn|k)\b)?"
+_NUMBER = r"\d(?:[\d,]*\d)?(?:\.\d{1,2})?"
+
 _AMOUNT = re.compile(
-    r"(?:under|below|less than|no more than|max(?:imum)?|budget(?: of)?|within|up ?to|at most)"
-    r"\s*(?:rs\.?|inr|₹)?\s*(\d(?:[\d,]*\d)?(?:\.\d{1,2})?)",
+    r"(?:under|below|less than|no more than|max(?:imum)?|budget(?: is| of)?|within|up ?to|at most)"
+    rf"\s*(?:rs\.?|inr|₹)?\s*({_NUMBER}{_SCALE})",
     re.IGNORECASE,
 )
-_BARE_AMOUNT = re.compile(r"(?:rs\.?|inr|₹)\s*(\d(?:[\d,]*\d)?(?:\.\d{1,2})?)", re.IGNORECASE)
+_BARE_AMOUNT = re.compile(rf"(?:rs\.?|inr|₹)\s*({_NUMBER}{_SCALE})", re.IGNORECASE)
 # People put the bound after the number as often as before: "45000 max",
 # "900 for both". Reading only the prefix form loses ordinary instructions.
 _TRAILING_AMOUNT = re.compile(
-    r"(?:rs\.?|inr|₹)?\s*(\d(?:[\d,]*\d)?(?:\.\d{1,2})?)\s*"
+    rf"(?:rs\.?|inr|₹)?\s*({_NUMBER}{_SCALE})\s*"
     r"(?:max(?:imum)?|budget|total|for (?:both|all|the lot|everything))\b",
     re.IGNORECASE,
 )
@@ -241,6 +129,21 @@ _PRODUCT_REF = re.compile(
     r"\bthe\s+((?:[A-Z][\w-]*|\d[\w-]*)(?:\s+(?:[A-Z][\w-]*|\d[\w-]*)){1,4})",
 )
 _BRAND = re.compile(r"\b(?:by|from)\s+([A-Z][\w-]+)|\b([A-Z][\w-]+)\s+(?:running|shoe)")
+_MATERIALS = ("leather", "mesh", "rubber", "cotton", "polyester", "whey", "wood", "cork", "steel")
+
+
+def material_product_ref(text: str) -> str | None:
+    punctuation = str.maketrans(string.punctuation, " " * len(string.punctuation))
+    tokens = text.casefold().translate(punctuation).split()
+    for material in _MATERIALS:
+        for words in CATEGORY_WORDS.values():
+            for word in words:
+                for index in range(len(tokens) - 1):
+                    same_material = tokens[index] == material
+                    same_category = tokens[index + 1].rstrip("s") == word.rstrip("s")
+                    if same_material and same_category:
+                        return " ".join(tokens[index : index + 2])
+    return None
 
 _VAGUE = (
     "decent",
@@ -322,16 +225,23 @@ class RuleBasedExtractor:
         """
         for pattern in (_AMOUNT, _TRAILING_AMOUNT):
             for match in pattern.finditer(text):
-                digits = match.group(1).replace(",", "")
                 marked = bool(re.search(r"(rs\.?|inr|₹)", match.group(0), re.IGNORECASE))
-                if marked or float(digits) >= 100:
+                try:
+                    paise = parse_rupees(match.group(1))
+                except (ValueError, TypeError):
+                    # Not money at all. It used to be float(), which read "20k"
+                    # as a crash and put a float in the money path besides.
+                    continue
+                if marked or paise >= _COUNT_CEILING_PAISE:
                     return match
         return _BARE_AMOUNT.search(text)
 
     @staticmethod
     def _product_ref(text: str) -> str | None:
         match = _PRODUCT_REF.search(text)
-        return match.group(1).strip() if match else None
+        if match:
+            return match.group(1).strip()
+        return material_product_ref(text)
 
     @staticmethod
     def _brand(text: str) -> str | None:

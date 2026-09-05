@@ -3,7 +3,12 @@ name = "intentguard"
 version = "0.1.0"
 description = "Deterministic authorization gate between an AP2 Intent Mandate and the payment rail"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2.7"]
+# fastapi and boto3 are here rather than in the extras below because the
+# deployment target installs from this file and has no way to ask for an extra.
+# Nothing else changed: policy/, the benchmark and the tests still import
+# neither, and the import-graph tests still prove it. What is lost is a smaller
+# install for someone who only wants the engine.
+dependencies = ["pydantic>=2.7", "fastapi>=0.115", "boto3>=1.35"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.5"]
