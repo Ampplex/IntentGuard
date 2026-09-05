@@ -1,30 +1,965 @@
 # IntentGuard
 
-IntentGuard is a deterministic authorization gate for agentic commerce. It evaluates whether a merchant's offer satisfies a user's AP2 Intent Mandate before the payment rail is reached.
+> **A deterministic authorization gate for agentic commerce.**
 
-The core problem is simple: verifying a signature proves that a user authorized *something*; it does not prove that *this cart* is authorized. IntentGuard closes that gap with three outcomes:
+IntentGuard verifies that a merchant's final offer is actually authorized by a user's **AP2 Intent Mandate** before any payment reaches Razorpay.
 
-- `ALLOW`: the offer satisfies the mandate and may reach Razorpay.
-- `BLOCK`: one or more constraints are violated; no payment call is made.
-- `ESCALATE`: the system cannot decide with confidence and asks for clarification.
+A payment signature can prove that a user authorized *something*. It does **not** prove that the user authorized **this exact cart**.
 
-Models may extract structured fields from natural language, but they never produce the decision. The policy engine evaluates integer paise, enums, and validated schemas.
+IntentGuard closes that gap.
 
-Built for the Razorpay AI Buildathon, Track 01.
+```text
+User Intent
+     ↓
+Buyer Agent ↔ Merchant Agent
+     ↓
+Final Cart / Offer
+     ↓
+┌──────────────────────────────┐
+│       INTENTGUARD GATE       │
+│                              │
+│  Deterministic authorization │
+└──────────────────────────────┘
+        ↓       ↓        ↓
+     BLOCK   ESCALATE   ALLOW
+        │       │        │
+        ↓       ↓        ↓
+      Audit   Human    Razorpay
+              Review   Test API
+```
 
-## What it demonstrates
+Built for the **Razorpay AI Buildathon — Track 01: AI Growth & Agentic Commerce**.
 
-- Rule-based mandate extraction with optional Amazon Bedrock extraction.
-- A buyer agent and an untrusted merchant agent negotiating an offer.
-- Deterministic checks for amount, currency, quantity, category, condition, recurrence, EMI, add-ons, substitutions, expiry, and malformed data.
-- A gate that records every decision in a tamper-evident audit log.
-- Razorpay Standard Checkout in test mode, reachable only after `ALLOW`.
-- Escalation, uncertain execution, payment signature verification, and compliance receipts.
-- Gold and synthetic benchmark datasets with separate reporting.
+---
 
-## Quick start
+# The Problem
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+In agentic commerce, an AI agent can negotiate and assemble a cart on behalf of a user.
+
+The difficult question is not:
+
+> **"Did the user authorize a payment?"**
+
+It is:
+
+> **"Did the user authorize this exact merchant offer?"**
+
+Consider a user saying:
+
+> "Buy me running shoes under ₹5,000, size 9, no leather."
+
+A merchant agent could return:
+
+* ₹4,500 shoes + ₹499 shipping
+* a recurring subscription
+* an additional warranty
+* quantity 2 instead of 1
+* a different product
+* a product containing leather
+* a mismatched total
+* a different currency
+
+The user may have authorized the original intent, but **not necessarily the resulting cart**.
+
+IntentGuard therefore treats the merchant's offer and both agents as **untrusted inputs**.
+
+Only the deterministic policy gate can authorize payment.
+
+---
+
+# What IntentGuard Demonstrates
+
+## Three possible outcomes
+
+| Decision     | Meaning                            | Razorpay called? |
+| ------------ | ---------------------------------- | ---------------- |
+| **ALLOW**    | Offer satisfies the user's mandate | ✅ Yes            |
+| **BLOCK**    | A hard constraint is violated      | ❌ No             |
+| **ESCALATE** | The system cannot safely decide    | ❌ No             |
+
+Models may help extract structured information from natural language, but **models never make the authorization decision**.
+
+The final decision is computed from:
+
+* integer paise
+* enums
+* validated schemas
+* deterministic rules
+* explicit timestamps
+* hashes
+* persisted state
+
+---
+
+# System Architecture
+
+```mermaid
+flowchart LR
+    U[User instruction] --> X[Extractor]
+    X --> P[Ledger proposal]
+    P --> C{Required fields<br/>and confidence}
+
+    C -->|unclear| Q[Escalation question]
+    C -->|usable| L[IntentLedger]
+
+    L --> V[Merchant projection]
+    V --> M[Merchant Agent]
+    L --> B[Buyer Agent]
+
+    B <--> M
+    M --> O[Final Offer]
+
+    L --> G[IntentGuard Gate]
+    O --> G
+
+    G --> S[Schema & Boundary Validation]
+    S --> E[Deterministic Policy Engine]
+
+    E -->|Hard violation| K[BLOCK]
+    E -->|No hard violation| T[Semantic Checks]
+
+    T -->|Uncertain| H[ESCALATE]
+    T -->|Acceptable| A[ALLOW]
+
+    K --> D[Audit Chain]
+    H --> D
+    A --> D
+
+    A --> R[Razorpay Test API]
+    R --> Z[Payment Verification & Receipt]
+```
+
+## The critical trust boundary
+
+The merchant and buyer agents are **outside the trust boundary**.
+
+The trusted path is:
+
+```text
+                  UNTRUSTED
+┌──────────────────────────────────────┐
+│ User instruction                     │
+│                                      │
+│ Buyer Agent ↔ Merchant Agent         │
+│                                      │
+│ Final Offer                          │
+└──────────────────┬───────────────────┘
+                   │
+                   ▼
+             ┌─────────────┐
+             │ INTENTGUARD │  ← TRUSTED
+             │    GATE     │
+             └──────┬──────┘
+                    │
+           ┌────────┼────────┐
+           ▼        ▼        ▼
+        BLOCK   ESCALATE   ALLOW
+                             │
+                             ▼
+                          Razorpay
+```
+
+---
+
+# End-to-End Working
+
+## 1. User gives a natural-language instruction
+
+Example:
+
+```text
+"Buy me running shoes, size 9, under ₹5,000,
+black preferred, no leather."
+```
+
+The extractor converts this into a typed `IntentLedger`.
+
+Important properties:
+
+* spending ceiling → integer paise
+* category → controlled enum
+* quantity → validated value
+* exclusions → explicit constraints
+* preferences → soft constraints
+* confidence → deterministic confidence calculation
+
+A weak or ambiguous mandate cannot reach payment.
+
+---
+
+## 2. Merchant receives a restricted view
+
+The merchant **does not receive the user's spending ceiling**.
+
+The merchant receives an allow-listed `MerchantView` containing things such as:
+
+* category
+* quantity
+* currency
+* authorized obligation types
+* product reference
+* exclusions
+* soft preferences
+
+It does **not** receive:
+
+```text
+max_total_paise
+raw instruction
+confidence
+```
+
+This prevents the merchant from simply quoting directly below the user's private ceiling.
+
+---
+
+## 3. Buyer and merchant negotiate
+
+The buyer agent acts for the user.
+
+The merchant agent represents the seller and can deliberately behave badly in the demo.
+
+Examples:
+
+```text
+Honest seller
+Hidden shipping
+Paid add-on
+Recurring trial
+Product substitution
+Quantity inflation
+Currency swap
+Total mismatch
+Excluded material
+Prompt injection
+Unknown field
+```
+
+The negotiation result is still considered **untrusted**.
+
+---
+
+## 4. IntentGuard evaluates the final offer
+
+The final offer passes through:
+
+```text
+Schema validation
+       ↓
+Arithmetic validation
+       ↓
+Currency validation
+       ↓
+Quantity validation
+       ↓
+Recurrence / EMI checks
+       ↓
+Category / condition checks
+       ↓
+Product identity checks
+       ↓
+Exclusion checks
+       ↓
+Semantic review
+       ↓
+ALLOW / BLOCK / ESCALATE
+```
+
+The merchant cannot bypass this gate.
+
+---
+
+# Decision State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> AWAITING_CONFIRMATION: Missing or weak mandate
+    [*] --> ACTIVE: Confirmed mandate
+
+    AWAITING_CONFIRMATION --> ACTIVE: User confirms / fresh TTL
+
+    ACTIVE --> SPENT: Order placed
+    ACTIVE --> EXECUTION_UNCERTAIN: Payment timeout or unknown order
+
+    EXECUTION_UNCERTAIN --> SPENT: Reconciliation finds settled order
+    EXECUTION_UNCERTAIN --> ACTIVE: Reconciliation finds no payment
+
+    ACTIVE --> EXPIRED: TTL elapsed
+    ACTIVE --> AWAITING_CONFIRMATION: Offer uncertainty
+```
+
+`BLOCK` is recorded as a decision outcome rather than as a separate persisted ledger state.
+
+A blocked offer therefore cannot be executed through the payment adapter.
+
+---
+
+# Runtime Sequence
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant API
+    participant Ledger as Ledger / Extractor
+    participant Agents as Buyer + Merchant
+    participant Gate
+    participant Audit
+    participant Razorpay
+
+    Browser->>API: POST /api/extract
+    API->>Ledger: Extract + build proposal
+    Ledger-->>API: Typed fields + confidence
+    API-->>Browser: Proposal / clarification
+
+    Browser->>API: POST /api/negotiate
+    API->>Agents: Bounded MerchantView + IntentLedger
+    Agents-->>API: Negotiation + final offer
+    API-->>Browser: Offer + evidence
+
+    Browser->>API: POST /api/create-order
+    API->>Gate: Validate + evaluate
+    Gate->>Audit: Append decision
+    Gate-->>API: ALLOW / BLOCK / ESCALATE
+
+    alt BLOCK or ESCALATE
+        API-->>Browser: HTTP 409
+        Note over API,Razorpay: No Razorpay call
+    else ALLOW
+        API->>Razorpay: Create order using audited amount
+        Razorpay-->>API: Order / timeout
+        API-->>Browser: Order / receipt / reconciliation
+    end
+
+    Browser->>API: POST /api/verify-payment
+    API-->>Browser: HMAC-verified payment
+```
+
+---
+
+# The Three Decisions
+
+## 🟢 ALLOW
+
+The offer satisfies the user's mandate.
+
+```text
+User ceiling:       ₹5,000
+Product:            Running shoes
+Quantity:           1
+Currency:           INR
+Final total:        ₹4,599
+Excluded material:  Leather
+Recurring charge:   None
+
+          ↓
+
+        ALLOW
+          ↓
+    Audit decision
+          ↓
+    Razorpay order
+```
+
+Only an **`ALLOW`** can reach the payment rail.
+
+---
+
+## 🔴 BLOCK
+
+A deterministic hard constraint is violated.
+
+Example:
+
+```text
+User:
+"Running shoes under ₹5,000"
+
+Merchant:
+Shoes                 ₹4,599
+Shipping                ₹499
+                        ------
+Total                  ₹5,098
+
+          ↓
+
+    TOTAL_EXCEEDS_MAX
+          ↓
+        BLOCK
+          ↓
+    No Razorpay call
+```
+
+Other hard violations include:
+
+* total mismatch
+* wrong currency
+* quantity violation
+* recurrence
+* unauthorized EMI
+* paid add-on
+* excluded material
+* exact product mismatch
+* expired mandate
+
+---
+
+## 🟡 ESCALATE
+
+The system encounters uncertainty that should not be silently guessed.
+
+Examples:
+
+```text
+Ambiguous spending limit
+Unknown category value
+Low-confidence extraction
+Uncertain product substitution
+Unmodelled merchant field
+Offer uncertainty
+```
+
+The user receives a clarification question.
+
+```text
+AWAITING_CONFIRMATION
+        ↓
+   User confirms
+        ↓
+       ACTIVE
+        ↓
+ Re-run complete decision
+```
+
+Human confirmation **cannot override a newly discovered hard violation**.
+
+---
+
+# Buyer vs Merchant vs IntentGuard
+
+IntentGuard intentionally separates the trust levels of the system.
+
+| Component          | Trust        | Responsibility                         |
+| ------------------ | ------------ | -------------------------------------- |
+| **Buyer Agent**    | Untrusted    | Acts for user, searches and negotiates |
+| **Merchant Agent** | Untrusted    | Represents seller and produces offer   |
+| **IntentGuard**    | Trusted      | Independently validates and authorizes |
+| **Razorpay**       | Payment rail | Executes only after `ALLOW`            |
+
+## Buyer Agent
+
+The buyer:
+
+* sees the user's private ceiling
+* negotiates toward a lower target
+* can make bounded decisions
+* cannot authorize payment
+
+## Merchant Agent
+
+The merchant:
+
+* receives an allow-listed mandate projection
+* does not receive `max_total_paise`
+* can simulate hostile behavior
+* cannot determine the final authorization
+
+## IntentGuard
+
+The gate:
+
+* trusts neither agent
+* validates the final cart
+* checks deterministic constraints
+* records the decision
+* controls access to Razorpay
+
+---
+
+# Razorpay Integration
+
+IntentGuard is built specifically around the agentic-commerce problem described by the Razorpay AI Buildathon Track 01.
+
+[Razorpay AI Buildathon](https://razorpay.com/buildathon/)
+
+The complete loop is:
+
+```text
+User Intent
+     ↓
+Buyer Agent
+     ↓
+Merchant Agent
+     ↓
+Final Cart
+     ↓
+IntentGuard
+     ↓
+┌──────────┬────────────┬─────────┐
+│  BLOCK   │  ESCALATE  │  ALLOW  │
+└──────────┴────────────┴────┬────┘
+                              ↓
+                       Razorpay Test API
+```
+
+The important guarantee is:
+
+```text
+BLOCK      → no payment call
+ESCALATE   → no payment call
+ALLOW      → Razorpay may be called
+```
+
+The create-order endpoint does **not accept an arbitrary amount from the browser**.
+
+The payment amount is derived from the audited, checked amount.
+
+---
+
+# Auditability
+
+Every authorization decision creates an `AuditRecord` containing:
+
+* mandate hash
+* offer hash
+* checked amount
+* spending ceiling
+* violations
+* latency
+* engine version
+* human-confirmation status
+
+Records form a tamper-evident chain:
+
+```text
+Record 1
+   │
+   └── hash
+       ↓
+Record 2
+   │
+   └── hash
+       ↓
+Record 3
+   │
+   └── hash
+       ↓
+Record 4
+```
+
+Conceptually:
+
+```text
+record_hash_n =
+    SHA256(canonical_json(record_n))
+
+record_n.previous_hash =
+    record_hash_(n-1)
+```
+
+Editing an earlier record breaks the chain from that point onward.
+
+An `ALLOW` can also produce a `ComplianceReceipt` containing the exact:
+
+* mandate hash
+* offer hash
+* authorized amount
+* checked constraints
+* decision metadata
+
+---
+
+# Safety Invariants
+
+IntentGuard is designed around explicit security invariants:
+
+* All money values are integer INR paise.
+* No currency conversion is performed.
+* The merchant never receives `max_total_paise`.
+* A payment call occurs only after `ALLOW`.
+* Mandates are single-use.
+* Unknown or ambiguous values escalate rather than being guessed.
+* Razorpay live keys are rejected.
+* The policy engine does not import model or payment code.
+* Payment amount comes from the audited decision, not the browser.
+* Payment timeouts become `EXECUTION_UNCERTAIN`.
+* Blind payment retries are avoided.
+* Payment signatures are verified using HMAC-SHA256 with constant-time comparison.
+
+---
+
+# Hostile Merchant Demonstrations
+
+The demo intentionally allows the merchant to behave adversarially.
+
+| Merchant behavior    | Example mutation                  | Expected handling                            |
+| -------------------- | --------------------------------- | -------------------------------------------- |
+| Honest seller        | Normal valid offer                | `ALLOW`                                      |
+| Hidden shipping      | Adds ₹499 shipping                | `BLOCK` if ceiling exceeded                  |
+| Paid add-on          | Adds ₹799 warranty                | `BLOCK`                                      |
+| Recurring trial      | Adds ₹299/month renewal           | `BLOCK`                                      |
+| Quantity inflation   | Adds one extra item               | `BLOCK`                                      |
+| Currency swap        | INR → USD                         | `BLOCK`                                      |
+| Total mismatch       | Declared total differs from lines | `BLOCK`                                      |
+| Excluded material    | Adds prohibited material          | `BLOCK`                                      |
+| Product substitution | Different product                 | `BLOCK` / `ESCALATE` depending on constraint |
+| Prompt injection     | Malicious listing instructions    | Ignored by authorization logic               |
+| Unknown field        | Adds unmodelled obligation        | `ESCALATE`                                   |
+
+The selected merchant behavior is **not itself the verdict**.
+
+The resulting offer is evaluated by the same policy engine every time.
+
+---
+
+# Algorithms
+
+## Final amount
+
+For line items:
+
+```text
+line_sum = Σ line.amount_paise
+
+TOTAL_MISMATCH
+    if offer.total_paise != line_sum
+```
+
+For non-EMI:
+
+```text
+checked_total = offer.total_paise
+```
+
+For EMI:
+
+```text
+checked_total =
+    max(
+        offer.total_paise,
+        emi.installment_paise * emi.installment_count
+    )
+```
+
+Budget violation:
+
+```text
+TOTAL_EXCEEDS_MAX
+    if checked_total > max_total_paise
+```
+
+---
+
+## Extraction Confidence
+
+Confidence is computed as:
+
+```text
+confidence = clamp(1.0 - penalties, 0, 1)
+```
+
+Signals include:
+
+| Signal                       | Penalty |
+| ---------------------------- | ------: |
+| Missing ceiling              |    1.00 |
+| No bound word                |    0.25 |
+| Vague language near amount   |    0.55 |
+| Unmarked multi-item quantity |    0.45 |
+| Hedged quantity              |    0.50 |
+| Competing monetary amounts   |    0.60 |
+
+A low-confidence mandate becomes `AWAITING_CONFIRMATION`.
+
+---
+
+## Catalog Retrieval
+
+Catalog retrieval is deliberately separate from authorization.
+
+The merchant can use:
+
+1. **BM25**
+2. **Character-trigram coverage**
+3. **Optional dense embeddings**
+
+BM25:
+
+```text
+k1 = 1.5
+b  = 0.75
+```
+
+Character trigram retrieval requires at least:
+
+```text
+50% query-trigram coverage
+```
+
+The lexical rankings are combined using Reciprocal Rank Fusion:
+
+```text
+RRF(item) =
+    Σ 1 / (60 + rank_arm(item))
+```
+
+Optional Bedrock embeddings use:
+
+```text
+amazon.titan-embed-text-v2:0
+```
+
+with the configured dense similarity floor.
+
+Retrieval can suggest a product.
+
+**It cannot authorize payment.**
+
+---
+
+## Buyer Negotiation
+
+The buyer's target is intentionally below the user's ceiling:
+
+```text
+target_paise =
+    floor(max_total_paise * target_bps / 10,000)
+```
+
+Default:
+
+```text
+target_bps = 9,000
+target = 90% of ceiling
+```
+
+For the default `haggle` mode:
+
+```text
+gap = quoted_total - target_paise
+
+conceded = floor(gap / 10)
+
+revised_product_price =
+    max(0, previous_product_price - conceded)
+```
+
+Negotiation stops after:
+
+* concession below ₹1
+* or 6 rounds
+
+Negotiation is an optimization step.
+
+**It is never the authorization step.**
+
+---
+
+# Decision Precedence
+
+If multiple violations exist, the system follows:
+
+```text
+if any BLOCK:
+    BLOCK
+
+else if any ESCALATE:
+    ESCALATE
+
+else:
+    ALLOW
+```
+
+This prevents a soft uncertainty from hiding a hard violation.
+
+---
+
+# Metrics & Benchmarking
+
+Gold and synthetic datasets are evaluated separately.
+
+Core classification metrics:
+
+```text
+accuracy
+precision
+recall
+F1
+macro_F1
+```
+
+Safety and commerce metrics include:
+
+```text
+authorized_completion_rate
+false_block_rate
+value_wrongly_blocked_paise
+unauthorized_pass_rate
+exposure_prevented_paise
+exposure_leaked_paise
+escalation_rate
+escalation_recall
+```
+
+Runtime monitoring exposes:
+
+```text
+/api/metrics
+```
+
+Important production signals include:
+
+* `ALLOW / BLOCK / ESCALATE` distribution
+* false-block rate
+* unauthorized pass rate
+* p50 / p95 / p99 latency
+* violations by code
+* audit-chain verification
+* `EXECUTION_UNCERTAIN` count
+* merchant projection ceiling exposure
+
+---
+
+# Why This Matters for Agentic Commerce
+
+IntentGuard's core proposition is:
+
+> **Agents can negotiate freely, but they cannot move money freely.**
+
+The agents are allowed to:
+
+```text
+search
+negotiate
+propose
+adapt
+```
+
+But the payment rail only sees:
+
+```text
+an independently validated
+and auditable authorization decision
+```
+
+That creates a clean separation between:
+
+```text
+AI interpretation
+        ↓
+AI negotiation
+        ↓
+deterministic authorization
+        ↓
+payment execution
+```
+
+The result is an agentic-commerce flow where **the merchant can be untrusted, the AI can be probabilistic, and the payment boundary can still remain deterministic.**
+
+---
+
+# Full Flow
+
+```text
+                 USER
+                  │
+                  ▼
+         Natural-language intent
+                  │
+                  ▼
+              EXTRACTION
+                  │
+                  ▼
+             IntentLedger
+                  │
+         ┌────────┴─────────┐
+         ▼                  ▼
+   Buyer Agent         Merchant Agent
+         │                  │
+         └────────┬─────────┘
+                  ▼
+             Final Offer
+                  │
+                  ▼
+          ┌───────────────┐
+          │  INTENTGUARD  │
+          │     GATE      │
+          └───────┬───────┘
+                  │
+         ┌────────┼────────┐
+         ▼        ▼        ▼
+      BLOCK   ESCALATE   ALLOW
+         │        │        │
+         ▼        ▼        ▼
+       Audit    Human     Audit
+                review      │
+                             ▼
+                       Razorpay Test API
+                             │
+                             ▼
+                     Payment Verification
+                             │
+                             ▼
+                    Compliance Receipt
+```
+
+**The key invariant:**
+
+```text
+No ALLOW
+   =
+No Razorpay payment call
+```
+
+---
+
+# Demo Checkout
+
+The browser demo is a React/Vite frontend backed by the real API.
+
+It demonstrates:
+
+```text
+Extraction
+   ↓
+Negotiation
+   ↓
+Deterministic evaluation
+   ↓
+Audit logging
+   ↓
+ALLOW / BLOCK / ESCALATE
+   ↓
+Razorpay test-mode checkout
+   ↓
+Payment verification
+```
+
+It does not use fixture responses.
+
+---
+
+# Project Structure
+
+| Package              | Responsibility                                           |
+| -------------------- | -------------------------------------------------------- |
+| `core`               | Schemas, integer-money helpers, hashing, violation codes |
+| `ledger`             | Extraction, confidence, mandate construction, TTL        |
+| `policy`             | Deterministic authorization checks                       |
+| `merchant` / `buyer` | Merchant behavior and buyer negotiation                  |
+| `semantic`           | Product substitution and preference drift                |
+| `gate`               | Trust boundary, decisions, escalation, audit writes      |
+| `payments`           | Razorpay adapter, receipts, idempotency                  |
+| `audit` / `metrics`  | Verifiable records and reporting                         |
+| `bench`              | Dataset generation and benchmarking                      |
+
+---
+
+# Project Setup
+
+Requires:
+
+* Python 3.11+
+* `uv`
 
 ```bash
 uv venv --python 3.12 .venv
@@ -32,543 +967,184 @@ uv pip install -e ".[dev]"
 .venv/bin/python -m pytest
 ```
 
-Run the backend without credentials. The rule-based extractor and test suite do not make network calls:
+Run the backend:
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m uvicorn \
   intentguard.api.app:create_app --factory --port 8000
 ```
 
-Open <http://127.0.0.1:8000>. Without a built frontend, the API serves the fallback checkout page.
+Open:
 
-## Demo checkout
-
-The browser demo is a React/Vite app backed by the real API. It runs extraction, negotiation, deterministic evaluation, audit logging, and Razorpay test-mode checkout; it does not use fixture responses.
-
-```bash
-cd web
-npm install
-npm run build
-cd ..
-PYTHONPATH=src .venv/bin/python -m uvicorn \
-  intentguard.api.app:create_app --factory --port 8000
+```text
+http://127.0.0.1:8000
 ```
 
-For frontend development, start the backend on port 8000 and run `npm run dev` in `web/`. Vite proxies `/api` to the backend.
+Without the built frontend, the API serves the fallback checkout page.
 
-Razorpay checkout requires test credentials. Copy `.env.example` to `.env` and set:
+---
+
+# Razorpay Test Checkout Setup
+
+Razorpay checkout requires test credentials.
+
+Copy:
+
+```text
+.env.example → .env
+```
+
+and configure:
 
 ```dotenv
 RAZORPAY_KEY_ID=rzp_test_...
 RAZORPAY_KEY_SECRET=...
 ```
 
-Live keys are rejected at startup. The secret stays server-side; only the public key id is returned to the browser. Razorpay's test card is `4100 2800 0000 1007`, CVV `123`, expiry `12/26`. Test UPI is `test@razorpay`.
+Live keys are rejected at startup.
 
-## Request flow
+The secret remains server-side; only the public key ID is exposed to the browser.
 
-1. `/api/extract` turns a natural-language instruction into a proposed mandate and reports the extraction backend, confidence, and weak fields.
-2. `/api/negotiate` gives the merchant a bounded view of the mandate and runs the buyer and merchant agents.
-3. `/api/create-order` validates the mandate and offer, runs the gate, writes an audit record, and only then creates a Razorpay order using the judged total.
-4. `/api/verify-payment` verifies Razorpay's HMAC signature before a payment is treated as made.
+The project is **test-mode only**.
 
-The create-order request has no amount field. The caller cannot bypass the gate by choosing a different charge amount. `BLOCK` and `ESCALATE` return HTTP 409 and do not call Razorpay.
+---
 
-## Architecture
+# Frontend Development
 
-```text
-Natural-language instruction
-             |
-     ledger / extraction
-             |
-  buyer <-> merchant negotiation
-             |
-       gate / policy engine
-        |       |       |
-     BLOCK  ESCALATE  ALLOW
-        |       |       |
-      audit   human   Razorpay test API
+```bash
+cd web
+npm install
+npm run build
+cd ..
 ```
 
-| Package | Responsibility |
-|---|---|
-| `core` | Schemas, integer-money helpers, hashing, and violation codes |
-| `ledger` | Extraction, confidence, mandate construction, and TTL handling |
-| `policy` | Deterministic authorization checks; isolated from model and payment code |
-| `merchant` / `buyer` | Untrusted merchant behavior and bounded buyer negotiation |
-| `semantic` | Product substitution and preference drift signals |
-| `gate` | Trust boundary, decision assembly, escalation, and audit writes |
-| `payments` | Razorpay adapter, receipts, idempotency, and uncertain execution |
-| `audit` / `metrics` | Verifiable records, rendering, and benchmark reporting |
-| `bench` | Independent generator, harness, exports, and dashboard data |
+Start the backend:
 
-## Internal processing
-
-IntentGuard separates **interpretation** from **authorization**. Natural language and merchant payloads are untrusted inputs. They are converted into typed records at the boundary, then the authorization decision is computed from integers, enums, hashes, and an injected timestamp.
-
-### System data flow
-
-```mermaid
-flowchart LR
-  U[User instruction] --> X[Extractor]
-  X --> P[Ledger proposal]
-  P --> C{Required fields and confidence}
-  C -->|unclear| Q[Escalation question]
-  C -->|usable| L[IntentLedger]
-
-  L --> V[Merchant projection]
-  V --> M[Merchant agent]
-  L --> B[Buyer agent]
-  B <--> M
-  M --> O[Final offer payload]
-
-  L --> G[Gate]
-  O --> G
-  G --> S[Schema and boundary validation]
-  S --> E[Deterministic policy engine]
-  E -->|hard violations| K[BLOCK]
-  E -->|no hard violations| T[Semantic checks]
-  T -->|uncertain similarity or drift| H[ESCALATE]
-  T -->|acceptable| A[ALLOW]
-
-  K --> D[Audit chain]
-  H --> D
-  A --> D
-  A --> R[Razorpay test API]
-  R --> Z[Payment verification and receipt]
+```bash
+PYTHONPATH=src .venv/bin/python -m uvicorn \
+  intentguard.api.app:create_app --factory --port 8000
 ```
 
-The merchant and buyer agents are deliberately separate from the trusted gate. The merchant receives an allow-listed projection without the spending ceiling. The buyer can see the ceiling because it acts for the user, but negotiation is bounded and the resulting cart is still treated as untrusted when it reaches the gate.
+For frontend development:
 
-### Runtime sequence
-
-```mermaid
-sequenceDiagram
-  participant Browser
-  participant API
-  participant Ledger as Ledger / Extractor
-  participant Agents as Buyer + Merchant
-  participant Gate
-  participant Audit
-  participant Razorpay
-
-  Browser->>API: POST /api/extract {instruction}
-  API->>Ledger: extract and build proposal
-  Ledger-->>API: typed fields, confidence, weak_fields
-  API-->>Browser: proposal or clarification question
-
-  Browser->>API: POST /api/negotiate {ledger, hostility}
-  API->>Agents: bounded MerchantView + IntentLedger
-  Agents-->>API: negotiation rounds + final offer
-  API-->>Browser: offer and negotiation evidence
-
-  Browser->>API: POST /api/create-order {ledger, offer}
-  API->>Gate: validate, evaluate, measure, and record
-  Gate->>Audit: append decision before payment
-  Gate-->>API: ALLOW, BLOCK, or ESCALATE
-
-  alt BLOCK or ESCALATE
-    API-->>Browser: HTTP 409, violations, no rail call
-  else ALLOW
-    API->>Razorpay: create order using audited checked_total_paise
-    Razorpay-->>API: order or timeout
-    API-->>Browser: order, receipt, or reconciliation-required error
-  end
-
-  Browser->>API: POST /api/verify-payment {order, payment, signature}
-  API-->>Browser: verified only after constant-time HMAC comparison
+```bash
+cd web
+npm run dev
 ```
 
-### Processing stages and data contracts
+Vite proxies `/api` to the backend.
 
-#### 1. Instruction to mandate
+---
 
-`POST /api/extract` produces an `ExtractedIntent`, then `ledger.build.build_ledger()` creates a proposed `IntentLedger`.
+# Development Commands
 
-- Amounts are parsed into integer paise. Floating-point values never enter the money path.
-- An explicit per-unit limit is multiplied by quantity. An unmarked multi-item budget is ambiguous and becomes a question.
-- Required fields are the spending ceiling and controlled product category.
-- Confidence is derived from the instruction: vague terms, missing bounds, competing amounts, and hedged quantities reduce confidence.
-- A weak proposal is `AWAITING_CONFIRMATION`; it cannot reach payment.
-
-The model, when configured, only fills the extraction schema. It has no decision field and cannot emit `ALLOW`, `BLOCK`, or `ESCALATE` as an authorization result.
-
-#### 2. Information-minimized merchant view
-
-`merchant.projection.project()` constructs `MerchantView` by explicitly naming fields the merchant may see. It includes category, quantity, currency, authorized obligation types, product reference, exclusions, and soft preferences.
-
-It excludes `max_total_paise`, raw instruction text, and confidence. This prevents a merchant from quoting directly below the user's ceiling or extracting that ceiling from prose. The projection is an allow-list, so newly added mandate fields remain private until deliberately exposed.
-
-#### 3. Hybrid catalog retrieval
-
-Catalog selection is a retrieval problem, not a payment-decision problem. The merchant searches the in-memory `CATALOG` after deterministic category and condition filtering. It never filters by the user's spending ceiling because that value is intentionally absent from `MerchantView`.
-
-For a named product, `merchant.search.search()` creates one searchable document per catalog item with `document_for()`. Each document contains the title, brand, colour, SKU, controlled category, category synonyms, and materials. The query is normalized by `tokenise()` and generic category words are removed by `distinctive()` so a request for a product type such as “running shoes” does not become a false exact product identity.
-
-The default retrieval path has two lexical arms:
-
-1. **BM25** ranks exact terms using term frequency, inverse document frequency, and document-length normalization. The implementation uses Okapi-style parameters `k1 = 1.5` and `b = 0.75`. Rare identifiers such as `T480`, `Airdopes`, or `Gel-Contend` receive more weight than common terms.
-2. **Character-trigram coverage** breaks the normalized query and document into three-character windows. A document is a candidate when it covers at least 50% of the query trigrams. This handles spelling and formatting variation such as `earphone`/`earphones`, `boat`/`boAt`, and `mac book`/`macbook`.
-
-The two rankings do not share a comparable numeric score, so they are combined with **Reciprocal Rank Fusion (RRF)** rather than by adding BM25 and trigram scores:
-
-```text
-RRF(item) = sum over retrieval arms of 1 / (k + rank(item))
-```
-
-The implementation uses `k = 60`. A product receives a contribution only from an arm that returned it; being absent from one ranking is not treated as a negative score. `fuse()` returns both the fused score and the individual arm ranks for inspection.
-
-When Bedrock credentials are available, `api._retrieval()` adds an optional dense arm through `BedrockEmbeddings`. The default model is `amazon.titan-embed-text-v2:0`. Catalog documents are embedded once per process by `warm()`, query/document vectors are cached, and vectors are normalized before comparison. Retrieval then uses the dot product of normalized vectors as cosine similarity and keeps candidates above the configured dense floor of `0.21`.
-
-The dense arm is additive, not authoritative. If embedding calls fail, the dense ranking is empty and BM25 plus trigrams continue to work. This makes semantic retrieval an availability enhancement rather than a dependency for checkout.
-
-Each fused hit is marked `grounded` when it shares a distinctive query token with the catalog document. A dense-only paraphrase is surfaced as an ungrounded candidate but is not trusted automatically. If configured, `BedrockReranker.keep()` receives only retrieved candidates and can return only their existing product IDs. It cannot invent a SKU, set a price, or authorize a payment. Reranking is cached for the same query and shelf across negotiation rounds.
-
-The resulting selection behavior is deliberately conservative:
-
-- A category-only request can return the matching category, sorted by price.
-- A named product with a grounded lexical hit returns the grounded candidates.
-- A dense-only candidate may be passed to the reranker for confirmation.
-- A named product with no answer can return an empty shelf rather than silently substituting another product.
-
-This is a hybrid retrieval/RAG-like component, but it is not the authorization engine. Retrieval proposes a catalog item; the merchant turns it into an untrusted offer; `gate.receive()` validates that offer; and `policy.evaluate()` independently checks the final cart before money can move.
-
-#### 4. Negotiation
-
-`BuyerAgent.negotiate()` runs a fixed maximum number of rounds. It targets a value below the ceiling using integer basis points, detects stalled concessions, and records each quote. Malformed merchant payloads become an unusable quote rather than a buyer-side crash.
-
-Negotiation is an optimization step, not an authorization step. Even an offer accepted by the buyer is sent to the gate for schema validation, arithmetic checks, semantic checks, and audit logging.
-
-#### 5. Gate and deterministic policy
-
-`gate.run_gate()` owns orchestration and timing. It calls `policy.evaluate(ledger, offer, now=now)` with an explicit timestamp, so policy output is reproducible and has no hidden clock dependency.
-
-The policy engine:
-
-1. Checks ledger status and TTL.
-2. Computes the chargeable total. For EMI, it uses the higher of the declared total and installment sum so merchant-supplied terms cannot lower the amount checked.
-3. Validates total arithmetic, currency, quantity, recurrence, EMI, and add-ons.
-4. Validates controlled category and condition values.
-5. Checks exact product identity and exclusions where the mandate provides them.
-6. Returns every violation, not only the first one.
-
-Hard violations produce `BLOCK`. Unknown condition/category values and low-confidence fields produce `ESCALATE`. The policy package imports neither model clients nor payment code; an import-graph test enforces this boundary.
-
-#### 6. Semantic review
-
-The semantic layer compares the product at the opening quote with the product in the final offer. It uses asymmetric token coverage, identifier penalties for model numbers and capacities, and merchant-shelf awareness to detect descriptions that name another product.
-
-This is intentionally advisory. A similarity threshold is probabilistic evidence, so `PRODUCT_SUBSTITUTION` can escalate but cannot independently block. Exact identity constraints remain deterministic and can block.
-
-#### 7. Escalation and human confirmation
-
-Escalation is a persisted state machine, not a UI override:
-
-1. A mandate question asks the user to clarify the instruction.
-2. An offer question describes the unresolved property of a specific cart.
-3. The mandate moves to `AWAITING_CONFIRMATION`, pausing its TTL.
-4. Confirmation restarts the TTL and records `human_confirmed`.
-5. The full decision is re-run; confirmation resolves uncertainty but cannot override a hard violation discovered during re-check.
-
-The question text is assembled from deterministic violation explanations. No model is asked to decide whether the user's answer is sufficient.
-
-#### 8. Audit before payment
-
-Every decision is written as an `AuditRecord` containing mandate and offer hashes, the checked amount, the ceiling, violations, latency, engine version, and human-confirmation status.
-
-Canonical JSON with sorted keys is hashed using SHA-256. The append-only JSONL audit store links each record to the previous record's hash. Tampering with one record breaks the chain from that sequence onward, and verification reports the first broken link.
-
-An `ALLOW` can produce a `ComplianceReceipt` containing the exact mandate hash, offer hash, authorized amount, checked constraints, and decision metadata. BLOCK and ESCALATE cannot produce an authorization receipt.
-
-#### 9. Payment execution and uncertain outcomes
-
-`payments.execute()` takes the amount from the audit record, never from the HTTP request. The rail is reached only for an active mandate whose recorded decision is `ALLOW` and whose amount meets Razorpay's minimum.
-
-The receipt is derived from `intent_id` and the exact offer hash and is reused for reconciliation. If the network times out, the ledger becomes `EXECUTION_UNCERTAIN`; the system does not create a new receipt or retry blindly. Reconciliation repeats the same idempotent identity and queries the resulting order and payments before deciding whether the mandate is spent.
-
-Razorpay keys are restricted to the `rzp_test_` prefix. Payment verification uses `HMAC-SHA256(order_id|payment_id)` with constant-time comparison. A forged signature never marks a payment as verified.
-
-### Decision state machine
-
-```mermaid
-stateDiagram-v2
-  [*] --> AWAITING_CONFIRMATION: missing or weak mandate
-  [*] --> ACTIVE: confirmed mandate
-  AWAITING_CONFIRMATION --> ACTIVE: user confirms / fresh TTL
-  ACTIVE --> SPENT: order placed
-  ACTIVE --> EXECUTION_UNCERTAIN: payment timeout or unknown order
-  EXECUTION_UNCERTAIN --> SPENT: reconciliation finds settled order
-  EXECUTION_UNCERTAIN --> ACTIVE: reconciliation finds no payment
-  ACTIVE --> EXPIRED: TTL elapsed
-  ACTIVE --> AWAITING_CONFIRMATION: offer uncertainty
-```
-
-`BLOCK` is an outcome recorded in the audit decision; it is not a separate persisted ledger status. The mandate remains governed by its normal lifecycle and cannot be executed through the payment adapter.
-
-## Safety invariants
-
-- All money values are integer INR paise; no currency conversion is performed.
-- The merchant never receives `max_total_paise` in its projected view.
-- A payment call occurs only after `ALLOW`.
-- A mandate is single-use and becomes `SPENT` after a successful authorization.
-- Unknown or ambiguous values escalate; they are not silently guessed.
-- Razorpay live keys are refused. This project is test-mode only.
-- The policy package does not import extraction, model, ledger, or payment code.
-- The benchmark generator does not import the policy package.
-
-## Development commands
+Run tests:
 
 ```bash
 .venv/bin/python -m pytest
-.venv/bin/python -m ruff check .
+```
 
-# Rebuild datasets and benchmark artifacts
+Run linting:
+
+```bash
+.venv/bin/python -m ruff check .
+```
+
+Rebuild benchmark datasets:
+
+```bash
 .venv/bin/python data/gold/author.py
 .venv/bin/python data/dev/author.py
 .venv/bin/python data/dev/substitutions.py
+```
+
+Run benchmark:
+
+```bash
 PYTHONPATH=src .venv/bin/python -m intentguard.bench.generator
 PYTHONPATH=src .venv/bin/python -m intentguard.bench.harness
 PYTHONPATH=src .venv/bin/python -m intentguard.bench.export
-PYTHONPATH=src .venv/bin/python -m intentguard.bench.dashboard \
-  dashboard/template.html dashboard/index.html
 ```
 
-The test suite covers schema rules, policy violations, import boundaries, hostile merchant input, negotiation termination, extraction calibration, escalation, audit integrity, payment failure paths, and the API boundary.
+---
 
-## Buildathon case and proof
+# Optional Bedrock Extraction / Retrieval
 
-IntentGuard is built for [Razorpay AI Buildathon Track 01: AI Growth & Agentic Commerce](https://razorpay.com/buildathon/). The track asks for an agent that makes a merchant transactable by an AI buyer, with every money action explainable, bounded, gated, and supported by an audit trail. This project demonstrates that loop in Razorpay test mode:
+The system works without model credentials using deterministic rule-based extraction.
 
-```text
-user instruction -> buyer agent -> merchant agent -> final cart
-  |                                  |
-  +-- private authorization ---------+--> deterministic gate
-               |       |
-             BLOCK / ESCALATE / ALLOW
-                    |
-                  Razorpay test API
-```
-
-The product has two agents with different trust levels:
-
-- **Buyer agent:** acts for the user, sees the private ceiling, searches and negotiates toward a lower target.
-- **Merchant agent:** represents the seller, receives an allow-listed projection without the ceiling, and may be configured with hostile test behavior.
-- **IntentGuard:** is the trusted guard. It does not trust either agent's final claim; it validates and evaluates the final offer before payment.
-
-The merchant behavior selector is a test input, not a verdict. It changes the offer the merchant emits. The gate blocks only when the resulting offer actually violates the mandate.
-
-## Algorithms and formulas
-
-This is the implementation reference for the demo. All monetary formulas operate on integer paise; `P(x)` means an integer number of paise and `R(x) = x / 100` is display-only rupees.
-
-### Money and final amount
-
-For line items `l_1 ... l_n`:
-
-```text
-line_sum = sum(l_i.amount_paise)
-TOTAL_MISMATCH if offer.total_paise != line_sum
-```
-
-The amount checked against the user's ceiling is:
-
-```text
-checked_total = offer.total_paise                         (no EMI)
-checked_total = max(offer.total_paise,
-          emi.installment_paise * emi.installment_count)  (EMI)
-```
-
-The budget rule is `TOTAL_EXCEEDS_MAX` when `checked_total > max_total_paise`. There is no currency conversion. Discounts reduce the final total because the ceiling applies to the final charged amount, not the original sticker price.
-
-### Extraction and confidence
-
-The extractor produces fields; it never produces an authorization decision. A ceiling is trusted when the instruction contains a monetary value and a bound such as `budget`, `under`, `below`, `up to`, or `maximum`.
-
-Confidence starts at `1.0` and is clamped to `[0, 1]`:
-
-```text
-confidence = clamp(1.0 - penalties, 0, 1)
-```
-
-| Signal | Penalty |
-|---|---:|
-| Missing ceiling | 1.00 |
-| No bound word | 0.25 |
-| Vague language near the amount | 0.55 |
-| Unmarked multi-item quantity | 0.45 |
-| Hedged quantity such as “a few” | 0.50 |
-| Competing monetary amounts | 0.60 |
-
-The system escalates when a confidence-gated field is below `CONFIDENCE_THRESHOLD`, unless a human has already confirmed the mandate. A clear number may still be displayed while the confidence gate asks for confirmation; this is fail-closed behavior, not a claim that the number was absent.
-
-### Catalog retrieval
-
-Catalog selection is retrieval, not authorization. The merchant never receives `max_total_paise`. Retrieval uses three optional ranking arms:
-
-1. **BM25:** Okapi BM25 with `k1 = 1.5` and `b = 0.75` ranks lexical matches.
-2. **Character trigrams:** normalized query/document strings are split into 3-character windows; a candidate needs at least 50% query-trigram coverage.
-3. **Dense embeddings:** normalized Bedrock vectors use cosine similarity, implemented as a dot product, with a configured floor of `0.21`.
-
-BM25 and trigram scores are not added because they are not on the same scale. They are fused using Reciprocal Rank Fusion:
-
-```text
-RRF(item) = sum(1 / (60 + rank_arm(item)))
-```
-
-An optional reranker can retain only retrieved catalog IDs. It cannot invent a SKU, set a price, or authorize a payment.
-
-### Negotiation algorithm
-
-The buyer's target is below, never above, the private ceiling:
-
-```text
-target_paise = floor(max_total_paise * target_bps / 10,000)
-default target_bps = 9,000
-default target = 90% of ceiling
-```
-
-For each bounded round, the buyer receives a merchant quote. If it is at or below the target, it stops. Otherwise it asks for the target. With the default `haggle` concession:
-
-```text
-gap = quoted_total - target_paise
-conceded = floor(gap / 10)
-revised_product_price = max(0, previous_product_price - conceded)
-```
-
-The buyer stops when `conceded < 100` paise or after `6` maximum rounds. The gate still makes the actual authorization decision.
-
-### Buyer bargaining options
-
-These options control the buyer agent's negotiation behavior. None can authorize a cart above the ceiling.
-
-| UI option | Internal mode | Behavior and formula |
-|---|---|---|
-| Haggles a little | `haggle` | `conceded = floor(gap / 10)` per counter; stops on a sub-₹1 concession or the round cap. |
-| Meets your price | `meet` | `conceded = gap`, targeting the buyer's 90% target immediately. |
-| Will not move | `stubborn` | `conceded = 0`; stall detection ends the exchange and the unchanged offer goes to the gate. |
-| Never settles | `oscillating` | Alternates `floor(gap / 4)` with reverse movement `-floor(gap / 5)`; the fixed cap guarantees termination. |
-
-### Merchant behavior options
-
-These options configure the untrusted merchant simulator. They do not directly set the gate outcome:
-
-| UI option | Internal mode | Offer mutation |
-|---|---|---|
-| An honest seller | `none` | Matched catalog product, normal quantity, currency, and free delivery. |
-| Adds shipping after quoting | `hidden_shipping` | Adds a ₹499 shipping line. |
-| Slips in a free trial that renews | `trial_subscription` | Adds a zero-price first-month line and recurring ₹299/month after 30 days. |
-| Adds a paid extra | `paid_addon` | Adds a ₹799 extended-warranty add-on. |
-| Sends a different product | `substitution` | Selects a different, cheaper matching item. |
-| Ships more than asked | `quantity_inflation` | Increases quantity by one. |
-| Quotes another currency | `currency_swap` | Changes INR to USD without conversion. |
-| Total disagrees with the items | `total_mismatch` | Reduces the declared total by ₹300 while line items stay unchanged. |
-| Writes instructions to the AI in the listing | `injection` | Appends hostile text to `raw_description`; policy never treats it as authorization. |
-| Uses a material you ruled out | `excluded_material` | Selects an item containing an explicitly excluded material. |
-| Adds a term nothing models | `unmodelled_field` | Adds `loyalty_lock_in_months = 12`, which escalates as an unknown field. |
-
-The selected label is never itself a violation. For every resulting offer, outcome precedence is:
-
-```text
-if any violation.outcome == BLOCK:       BLOCK
-else if any violation.outcome == ESCALATE: ESCALATE
-else:                                     ALLOW
-```
-
-### Policy and semantic formulas
-
-The deterministic checks run over ledger state, feasibility, confidence, currency, totals, quantity, recurrence, EMI, add-ons, category, condition, exact product identity, and exclusions. Exact identity removes generic category words and requires every distinctive requested token to appear in the offered identity:
-
-```text
-PRODUCT_SUBSTITUTION if distinctive(user_reference)
-      is not a subset of offered_product_tokens
-```
-
-Semantic substitution is advisory and escalates because similarity is probabilistic. Soft preference drift never blocks:
-
-```text
-drift_score = missed_preference_weight / expressed_preference_weight
-weights: brand = 0.5, delivery_speed = 0.3, colour = 0.2
-```
-
-### Audit and payment formulas
-
-Canonical sorted-key JSON is hashed with SHA-256, and every record links to its predecessor:
-
-```text
-record_hash_n = SHA256(canonical_json(record_n))
-record_n.previous_hash = record_hash_(n-1)
-```
-
-Payment amount comes from the audited checked total, never from a browser-supplied amount. `BLOCK` and `ESCALATE` do not call Razorpay. A timeout becomes `EXECUTION_UNCERTAIN`; the system reconciles using the same idempotent receipt instead of retrying blindly.
-
-## Metrics and monitoring
-
-### Offline benchmark metrics
-
-Run gold and synthetic datasets separately. Never combine their scores:
-
-```bash
-PYTHONPATH=src .venv/bin/python -m intentguard.bench.harness
-PYTHONPATH=src .venv/bin/python -m intentguard.bench.export
-```
-
-For each expected outcome `e` and actual outcome `a`:
-
-```text
-confusion[e][a] += 1
-accuracy = correct / all_cases
-precision_c = TP_c / predicted_c
-recall_c = TP_c / support_c
-F1_c = 2 * precision_c * recall_c / (precision_c + recall_c)
-macro_F1 = mean(F1_ALLOW, F1_BLOCK, F1_ESCALATE)
-```
-
-The product and safety metrics are:
-
-```text
-authorized_completion_rate = correct ALLOW / expected ALLOW
-false_block_rate = expected ALLOW predicted BLOCK / expected ALLOW
-value_wrongly_blocked_paise = sum(amount_paise for expected ALLOW predicted BLOCK)
-unauthorized_pass_rate = expected BLOCK predicted ALLOW / expected BLOCK
-exposure_prevented_paise = sum(amount_paise for expected BLOCK and actual != ALLOW)
-exposure_leaked_paise = sum(amount_paise for expected BLOCK predicted ALLOW)
-escalation_rate = actual ESCALATE / expected ALLOW-or-BLOCK cases
-escalation_recall = expected ESCALATE predicted ESCALATE / expected ESCALATE
-```
-
-Latency uses nearest-rank percentiles:
-
-```text
-p_q = sorted_samples[ceil(q * N) - 1]
-```
-
-The report includes p50, p95, p99, maximum latency, violation counts, and explanation quality: complete, specific, plain, and consequential.
-
-### Runtime monitoring
-
-The API exposes `/api/metrics`. Benchmark and audit artifacts are written to `data/dashboard.json`, `data/revenue.json`, and `data/api-audit.jsonl`. Monitor these by deployment and merchant scenario:
-
-| Signal | Why it matters |
-|---|---|
-| `ALLOW`, `BLOCK`, `ESCALATE` rate | Detects outcome-distribution and extractor drift. |
-| `false_block_rate`, `value_wrongly_blocked_paise` | Measures lost legitimate commerce. |
-| `unauthorized_pass_rate`, `exposure_leaked_paise` | Measures safety failures; any non-zero exposure needs investigation. |
-| p50/p95/p99 latency | Separates normal latency from model or network tail failures. |
-| `violations_by_code` | Shows whether low confidence, product matching, or offer arithmetic is changing. |
-| Audit-chain verification | Detects altered or missing decision history. |
-| `EXECUTION_UNCERTAIN` count | Finds payment outcomes requiring reconciliation before retry. |
-| Ceiling exposure checks | Confirms the merchant projection still omits `max_total_paise`. |
-
-Every decision should be traceable by `intent_id`, `offer_id`, mandate hash, offer hash, decision, checked amount, and timestamp. The dashboard is aggregate evidence; the audit record is the source of truth for an individual payment decision.
-
-## Scope and limitations
-
-IntentGuard is deliberately single-currency and INR-only. Mandates are single-use. The buyer agent can infer the spending ceiling from negotiation behavior, although it negotiates toward a target below the ceiling. Fraud detection is out of scope: suspiciously low prices are recorded as drift, not blocked solely for being low.
-
-Extraction runs without an API key through the rule-based fallback. Optional model-backed extraction is available through the Bedrock extra:
+Optional Bedrock support:
 
 ```bash
 uv pip install -e ".[bedrock]"
 ```
 
-For the full specification and design decisions, see [CLAUDE.md](CLAUDE.md) and [SPEC-DECISIONS.md](SPEC-DECISIONS.md).
+Model-backed components remain advisory.
+
+They cannot:
+
+* emit an authorization decision
+* invent a SKU
+* set a price
+* authorize a payment
+
+---
+
+# Testing
+
+The test suite covers:
+
+* schema rules
+* policy violations
+* import boundaries
+* hostile merchant input
+* negotiation termination
+* extraction calibration
+* escalation
+* audit integrity
+* payment failure paths
+* API boundaries
+
+The architectural boundary is enforced so the policy package remains independent from model and payment code.
+
+---
+
+# Scope & Limitations
+
+IntentGuard is intentionally:
+
+* INR-only
+* single-currency
+* single-use mandate based
+
+The buyer agent can infer the spending ceiling from negotiation behavior, although it negotiates toward a target below the ceiling.
+
+Fraud detection is out of scope. Suspiciously low prices are treated as drift rather than being blocked solely because they are low.
+
+---
+
+# Built for the Razorpay AI Buildathon
+
+IntentGuard demonstrates a complete agentic-commerce authorization loop:
+
+```text
+User Intent
+     ↓
+AI Buyer
+     ↓
+AI Merchant
+     ↓
+Negotiated Offer
+     ↓
+Deterministic Authorization
+     ↓
+BLOCK / ESCALATE / ALLOW
+     ↓
+Razorpay Test Payment
+     ↓
+Verification + Compliance Receipt
+```
+
+The core design principle is simple:
+
+> **AI can interpret and negotiate.
+> Deterministic policy decides whether money may move.**
